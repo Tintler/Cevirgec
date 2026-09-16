@@ -255,7 +255,7 @@ dist/
 └── translation_prompt.txt
 ```
 
-Dağıtım yaparken bu üç dosyayı aynı klasörde tutup birlikte ZIP'leyin. Logo ve gerekli uygulama varlıkları `.exe` içine eklenir. Antivirüslerin yeni ve imzasız PyInstaller dosyalarında yanlış pozitif üretmesi mümkündür; kullanıcılar için kaynak kodu ve dosya hash'ini yayımlamak güven artırır.
+Antivirüslerin yeni ve imzasız PyInstaller dosyalarında yanlış pozitif üretmesi mümkündür.
 
 ## Kaynak dosyaların görevleri
 
@@ -298,9 +298,13 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 - DRM korumalı EPUB dosyaları desteklenmez.
 - Taranmış sayfalardan OCR yapılmaz.
 - Çok karmaşık tablolar, etkileşimli öğeler ve özel JavaScript davranışları sadeleşebilir.
-- Yerel model tutarlı terim ve üslup kararlarına rağmen hata veya uydurma üretebilir.
+- Yerel model tutarlı terim ve üslup kararlarına rağmen hata veya uydurma üretebilir. Çoğu modelin Türkçe çevirisi iyi değil, kısa metinlerde deneyip kendinize uygun olanı bulun.
 - Zorla işlem sonlandırılırsa yalnızca son tamamlanmış kontrol noktasına kadar olan çalışma korunur.
 - Son EPUB'un Calibre ve en az bir farklı okuyucuda kontrol edilmesi önerilir.
+
+## Bilinen sorunlar
+- Çeviriden sonra oluşan Epub dosyasında ekstra kapak,content başlığı üretiyor.
+- Model kaynaklı, Eksik tamamlanma işareti,boş veya biçimsel olarak geçersiz model yanıtı,yanıta karışan araç/düşünme metni.Buna workaround olarak olarak o bölüm tekrar deneniyor iki defa.
 
 ## Sorun giderme
 
@@ -317,33 +321,3 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 | DRM/şifreleme hatası | DRM'siz ve kullanma hakkına sahip olduğunuz bir EPUB kullanın |
 
 Daha ayrıntılı kullanım notları için [KULLANIM.md](KULLANIM.md) dosyasına bakın.
-
-## GitHub'a yükleme
-
-Kaynak kodu GitHub'a göndermeden önce `.gitignore` dosyasını koruyun. Bu dosya üretilmiş `.exe`, çalışma klasörleri, EPUB kitapları, loglar, sanal ortamlar ve Python önbelleklerinin yanlışlıkla depoya eklenmesini engeller.
-
-GitHub'da boş bir `Cevirgec` deposu oluşturun. Mevcut yerel proje gönderileceği için oluşturma ekranında README, `.gitignore` ve lisans ekleme seçeneklerini işaretlememek en kolay yoldur. Ardından proje klasöründe:
-
-```bat
-git init
-git add .
-git status
-git commit -m "İlk Çevirgeç sürümü"
-git branch -M main
-git remote add origin https://github.com/KULLANICI_ADIN/Cevirgec.git
-git push -u origin main
-```
-
-`KULLANICI_ADIN` bölümünü GitHub kullanıcı adınızla değiştirin. Sonraki güncellemelerde:
-
-```bat
-git add .
-git commit -m "Değişiklikleri açıkla"
-git push
-```
-
-Kullanıcıların hazır uygulamayı indirebilmesi için `dist` klasörünü kaynak depoya commit etmeyin. Bunun yerine `Cevirgec.exe`, `config.json` ve `translation_prompt.txt` dosyalarını birlikte ZIP'leyin; GitHub'da **Releases → Draft a new release** üzerinden örneğin `v1.0.0` etiketiyle bu ZIP'i sürüm varlığı olarak ekleyin.
-
-## Lisans
-
-Bu projede henüz bir `LICENSE` dosyası bulunmuyor. Depoyu herkese açık yapmak başkalarına otomatik olarak değiştirme veya yeniden dağıtma izni vermez. Açık kaynak olarak paylaşmak istiyorsanız yayımlamadan önce amacınıza uygun bir lisans seçip kök dizine `LICENSE` dosyası ekleyin.
