@@ -305,6 +305,7 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 ## Bilinen sorunlar
 - Çeviriden sonra oluşan Epub dosyasında ekstra kapak,content başlığı üretiyor.
 - Model kaynaklı, Eksik tamamlanma işareti,boş veya biçimsel olarak geçersiz model yanıtı,yanıta karışan araç/düşünme metni.Buna workaround olarak olarak o bölüm tekrar deneniyor iki defa.
+- Çalışırken durdurup, LM studioda başka bir model yükleyip bunu gösterirseniz çalışmıyor, eski modeli ayağı kaldırıp ondan devam ediyor. Programı kapayıp açmadan düzelmiyor.
 
 ## Sorun giderme
 
