@@ -8,5 +8,10 @@
   "timeout_seconds": 1800,
   "token_estimation_enabled": true,
   "fallback_context_length": 32768,
-  "context_safety_tokens": 2048
+  "context_safety_tokens": 2048,
+  "glossary_strict": false,
+  "completion_marker_enabled": true,
+  "completion_marker_exempt_chars": 400,
+  "epubcheck_enabled": false,
+  "epubcheck_path": ""
 }

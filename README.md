@@ -16,6 +16,9 @@
 - LM Studio'da yüklü modelleri algılama ve açılır listeden model seçme
 - Kaynak EPUB'un içindekiler yapısına göre bölüm içe aktarma
 - Görselleri, kapak varlığını ve temel EPUB metadata bilgilerini koruma
+- Markdown tablolarını ve EPUB içi dipnot/çapraz bağlantıları yeni çıktı bölümlerine yeniden bağlama
+- Görsel/iç bağlantı/çapa hedefleri ile tablo yapısını çeviri öncesi/sonrası karşılaştıran yapısal çıktı koruması
+- Yalnızca görsel içeren kapak/harita bölümlerini modele göndermeden aynen kopyalama
 - Kitaba özel, zorunlu karşılıklar içeren özel terim sözlüğü
 - Kullanıcının dahil edilecek bölümleri seçtiği isteğe bağlı ön analiz
 - Kitap geneli sabit bilgiler ile bölüm özelindeki bilgileri ayrı tutma
@@ -25,8 +28,9 @@
 - Güvenli duraklatma: mevcut API isteği ve kayıt işlemi bittikten sonra bekleme
 - Güvenli kapanış: devam eden istek tamamlanmadan uygulamayı zorla kapatmama
 - Yaklaşık token/context denetimi ve ayarlanabilir güvenlik payı
-- Kitabın yaklaşık %25, %50 ve %75 noktalarında olay özeti sıkıştırma
+- Kitabın yaklaşık %25, %50 ve %75 noktalarında ve bağlam referansı context'in %40'ını aşınca olay özeti sıkıştırma; terim/isim/hitap kararları ayrı ve kalıcı tutulur
 - Windows için PyInstaller ile tek `.exe` oluşturma komut dosyası
+- Her EPUB üretiminde dahili ZIP/XML/manifest/bağlantı doğrulaması ve isteğe bağlı harici EPUBCheck
 
 ## Gereksinimler
 
@@ -35,6 +39,7 @@
 - [LM Studio](https://lmstudio.ai/) ve LM Studio'da yüklü bir sohbet modeli
 - Geliştirme/GUI çalıştırma için `PySide6`
 - `.exe` üretmek için `PyInstaller`
+- İsteğe bağlı standart doğrulama için EPUBCheck; JAR kullanılırsa Java
 
 Bağımlılıkları kurmak için proje klasöründe:
 
@@ -77,11 +82,12 @@ Varsayılan bağlantı yalnızca yerel makineye yöneliktir. Base URL doğrulama
 - **EPUB dosyası:** Yeni proje için kaynak EPUB
 - **Çalışma klasörü:** Proje klasörünün oluşturulacağı yer
 - **Projeyi sürdür:** Daha önce oluşturulmuş ve kontrol noktaları bulunan bir çalışma klasörünü açar
+- **Terim düzenle:** Sürdürülen projede sözlüğü düzenler; değişen terimlerin geçtiği bölümlerin yeniden çevrilmesini önerir
 - **Ayarlar:** Sağ üstteki düğmeden gelişmiş çalışma ayarlarını açar
 
 ### Sol bölüm listesi
 
-EPUB içindekiler sırasını ve her bölümün durumunu gösterir. Bir bölüme tıklanınca kaynak metin ve varsa Türkçe çeviri önizlenir. Bu alan yeniden çeviri editörü değildir; proje durumunu izleme ve sonuçları kontrol etme amaçlıdır.
+EPUB içindekiler sırasını ve her bölümün durumunu gösterir. Bir bölüme tıklanınca kaynak metin ve varsa Türkçe çeviri önizlenir. Bu alan yeniden çeviri editörü değildir; proje durumunu izleme ve sonuçları kontrol etme amaçlıdır. Bir bölüme **sağ tık → “Bu bölümü yeniden çevir”** ile o bölüm güvenli biçimde yeniden çevrilir: mevcut çeviri `recheck-prev-<tarih>.md` olarak yedeklenir, bölüm `next` durumuna alınır ve çeviriye sonraki bölümlerin bağlamı (özet/notlar) verilmez. Yeniden çeviri yalnızca o bölümü işler; sonraki bölümlere dokunmaz, yarım kalmış bölümün kaydı korunur. Bitince `TAM-CEVIRI.md` ve (kitap tamamsa) EPUB yeniden üretilir. Yalnızca çevrilmiş (`done`) veya sıradaki (`next`) bölüm yeniden çevrilebilir; aynı bölüm istendiği kadar yeniden çevrilebilir.
 
 Başlıca durumlar:
 
@@ -93,7 +99,7 @@ Başlıca durumlar:
 
 ### Sağ sekmeler
 
-- **Durum:** Aktif bölüm, parça sayısı ve genel ilerleme
+- **Durum:** Aktif bölüm, parça sayısı ve işlem ilerlemesi. Yüzde değeri dolgu renginden etkilenmemesi için çubuğun sağındaki sabit koyu kutuda gösterilir
 - **Konsol:** API istekleri, token bilgileri, yeniden denemeler, uyarılar ve hatalar
 - **Ön Analiz:** Tamamlanan ön analiz sonuçları
 - **Kaynak / Türkçe:** Seçilen bölümün iki metnini yan yana gösterir
@@ -109,7 +115,9 @@ Her kitap için İngilizce terim ile zorunlu Türkçe karşılığı eşleştiri
 | `Murderbot` | `Katilbot` |
 | `SecUnit` | `GüvBirim` |
 
-Sözlük isteğe bağlıdır; hiç terim girilmeden devam edilebilir. Girilen terimler `glossary.json` içinde kitap bazında saklanır ve her çeviri isteğine sabit kural olarak eklenir. Bir zorunlu karşılık çıktıda kullanılmazsa uygulama düzeltme ister; geçersiz sonuç kontrol noktası olarak kaydedilmez.
+Sözlük isteğe bağlıdır; hiç terim girilmeden devam edilebilir. Girilen terimler `glossary.json` içinde kitap bazında saklanır ve her çeviri isteğine sabit kural olarak eklenir. Zorunlu karşılık, kaynağı o çeviri parçasında geçen bir terim için aranır: terim kaynakta geçiyor ama Türkçe karşılık çıktıda kullanılmamışsa uygulama düzeltme ister; geçersiz sonuç kontrol noktası olarak kaydedilmez. Kaynağı parçada hiç geçmeyen bir terimin karşılığının o parçanın çıktısında bulunması beklenmez.
+
+**Terim düzenle** düğmesi, yalnızca yeni projede değil sürdürülen projede de sözlüğü açar. Bir terim eklendiğinde, kaldırıldığında veya karşılığı değiştiğinde uygulama o terimin geçtiği **çevrilmiş** bölümleri bulur ve bunları yeniden çevirmeyi önerir; henüz çevrilmemiş bölümler zaten yeni sözlükle çevrilir. Yeniden çevrilen bölümler sonraki bölümlerin bağlamını kullanmaz; önceki kararlar (karakter, terim, üslup) korunur.
 
 ## İsteğe bağlı ön analiz
 
@@ -136,6 +144,7 @@ Aşağıdaki geçici sorunlarda aynı parça otomatik olarak en fazla iki kez da
 - Boş veya biçimsel olarak geçersiz model yanıtı
 - Yanıta karışan araç/düşünme metni
 - Zorunlu sözlük karşılığının kullanılmaması
+- Kaynak görsel, iç bağlantı veya çapa hedefinin model tarafından silinmesi/değiştirilmesi
 - Geçici bağlantı ve timeout sorunları
 - HTTP 408, 429 veya 5xx yanıtları
 
@@ -155,45 +164,62 @@ tahmini giriş + çıktı token payı + güvenlik payı <= context uzunluğu
 
 Güvenlik payı; tokenizer farkları, sistem promptu, sözlük, notlar ve API'nin eklediği görünmeyen mesajlar için boş alan bırakır. Tahmin kesin token sayımı değildir, taşma riskini erken fark etmek için koruyucu bir kontroldür.
 
-Kitabın yaklaşık %25, %50 ve %75 noktalarında geçmiş olay/bağlam notları sıkıştırılır. Sözlük, kişi adları, hitap biçimleri ve kalıcı üslup kararları bu sıkıştırmayla değiştirilmez.
+Kitabın yaklaşık %25, %50 ve %75 noktalarında, ayrıca bir sonraki bölümün bağlam referansı context uzunluğunun %40'ını aştığında geçmiş notlar sıkıştırılır. Sıkıştırma önce notlardaki terim, isim ve hitap kararlarını `_python_translation/continuity-decisions.md` dosyasına ayıklar (bu liste her çeviri isteğine verilir), sonra olay özetini kısaltır. Notlar gerekirse birden fazla isteğe bölünür; böylece sıkıştırma isteği de context'e sığar. Not ve sıkıştırma isteklerinde geçici bağlantı hataları otomatik yeniden denenir.
 
 ## Ayarlar
 
-Ayarlar gelişmiş/deneysel seçeneklerdir. Emin değilseniz varsayılan değerleri koruyun; **Varsayılan ayarlara dön** düğmesiyle güvenli başlangıç ayarları geri yüklenebilir.
+Ayarlar gelişmiş/deneysel seçeneklerdir. Emin değilseniz varsayılan değerleri koruyun; **Varsayılan ayarlara dön** düğmesiyle güvenli başlangıç ayarları geri yüklenebilir. Pencerede kitap/EPUB seçenekleri ile LM Studio/model seçenekleri ayrı başlıklar altında gösterilir.
 
-| Ayar | İşlevi |
-|---|---|
-| Base URL | LM Studio yerel API adresi |
-| Model | LM Studio'da yüklü modeller arasından seçim |
-| Temperature | Modelin üretim çeşitliliği; istekle LM Studio'ya gönderilir |
-| Timeout | Tek API isteği için beklenecek azami saniye |
-| Parça boyutu | Kaynak metnin yaklaşık karakter tabanlı parça büyüklüğü |
-| Çıktı token payı | Çeviri yanıtına ayrılan azami token bütçesi |
-| Not çıktı tokenı | Analiz/not yanıtına ayrılan token bütçesi |
-| Fallback context | LM Studio context bilgisi vermezse kullanılacak sınır |
-| Güvenlik payı | Context hesabında boş bırakılan koruyucu token alanı |
-| Token tahmini | Yaklaşık context ön kontrolünü açar veya kapatır |
+| Grup | Ayar | İşlevi |
+|---|---|---|
+| Kitap ve EPUB | EPUBCheck | Üretilen EPUB üzerinde harici EPUBCheck doğrulamasını açar |
+| Kitap ve EPUB | EPUBCheck yolu | `epubcheck.jar`, yürütülebilir dosya yolu veya boş bırakılırsa PATH içindeki `epubcheck` |
+| Kitap ve EPUB | Katı sözlük | Açıksa uygulanamayan zorunlu terimde çeviri durur; kapalıyken (varsayılan) kayıt `glossary_fixes.log` dosyasına yazılır ve çeviri devam eder |
+| LM Studio ve model | Base URL | LM Studio yerel API adresi |
+| LM Studio ve model | Model | LM Studio'da yüklü modeller arasından seçim |
+| LM Studio ve model | Temperature | Modelin üretim çeşitliliği; istekle LM Studio'ya gönderilir |
+| LM Studio ve model | Timeout | Tek API isteği için beklenecek azami saniye |
+| LM Studio ve model | Parça boyutu | Kaynak metnin yaklaşık karakter tabanlı parça büyüklüğü |
+| LM Studio ve model | Çıktı token payı | Çeviri yanıtına ayrılan azami token bütçesi |
+| LM Studio ve model | Not çıktı tokenı | Analiz/not yanıtına ayrılan token bütçesi |
+| LM Studio ve model | Fallback context | LM Studio context bilgisi vermezse kullanılacak sınır |
+| LM Studio ve model | Güvenlik payı | Context hesabında boş bırakılan koruyucu token alanı |
+| LM Studio ve model | Token tahmini | Yaklaşık context ön kontrolünü açar veya kapatır |
+| LM Studio ve model | Bitiş işareti denetimi | Varsayılan açık. Kapatılırsa hiçbir çeviri veya glossary düzeltme yanıtında yapay bitiş işareti aranmaz; diğer çıktı ve EPUB kontrolleri sürer |
+| LM Studio ve model | İşaretsiz sınır | Varsayılan `400`. Denetim açıkken bu uzunluğa kadar olan ilk çeviri parçaları işaretsiz kabul edilir; örneğin `500` seçilirse sınır `500` olur |
 
-Parça boyutu veya ilgili çalışma ayarları çeviri sırasında değiştirilirse mevcut bölüm eski ayarlarla tamamlanır; yeni değerler sonraki bölümde devreye girer. Bu davranış kontrol noktalarının tutarlılığını korur.
+Parça boyutu veya ilgili çalışma ayarları çeviri sırasında değiştirilirse mevcut bölüm eski ayarlarla tamamlanır; yeni değerler sonraki bölümde devreye girer. Bitiş işareti denetimi ve işaretsiz sınır bunun istisnasıdır: başarısız veya yarım bölüm yeniden sürdürüldüğünde ilk kaydedilmemiş parçadan itibaren güncel değerler uygulanır. Kaydedilmiş parçalar değiştirilmez.
 
 ## EPUB içe aktarma ve çıktı
 
-Kaynak EPUB değiştirilmez. İçe aktarma sırasında HTML/XHTML içerikleri çalışma metnine dönüştürülür ve EPUB içindeki görsellere kaynak referansları korunur.
+Kaynak EPUB değiştirilmez. İçe aktarma sırasında HTML/XHTML içerikleri çalışma metnine dönüştürülür. Görseller `epub-resource:`, iç bağlantılar `epub-link:` ve hedef çapalar `[[EPUB_ANCHOR:...]]` teknik belirteçleriyle korunur. Bu belirteçler model çıktısında eksilir veya değişirse parça kaydedilmez ve otomatik yeniden denenir. Çok uzun tek paragraflar bölünürken teknik belirteçlerin ortadan kesilmemesine dikkat edilir.
+
+Yalnızca teknik bölüm başlığı ve görsel içeren kapak/harita gibi bölümler çeviri modeline gönderilmez; kaynak Markdown doğrudan çıktı olarak kullanılır. Böylece gereksiz token tüketimi ve görsel hedefinin bozulma riski önlenir.
 
 Üretilen EPUB için:
 
 - Kaynak metadata alanları mümkün olduğu ölçüde kopyalanır
 - Dil `tr` olarak ayarlanır
-- Başlık metadata'sının sonuna `TR` eklenir
+- Metadata'da `subtitle` işaretli başlık varsa onun, yoksa ilk `dc:title` değerinin sonuna `TR` eklenir
 - ISBN kaynakta varsa korunur; yoksa yapay ISBN üretilmez
 - Yayıncı, tarih, yazar ve diğer mevcut metadata bilgileri korunur
 - Kaynak görseller ve ikili varlıklar çıktı paketine eklenir
+- Yüzde kodlanmış ve adında parantez bulunan görsel yolları çözümlenir
+- Basit HTML tabloları Markdown tabloya, çıktı sırasında tekrar XHTML tabloya dönüştürülür
+- EPUB içi dipnot ve çapraz bağlantılar yeni bölüm dosyası/çapa adreslerine eşlenir
 - Yapay ikinci kapak oluşturulmaz
 - EPUB 3 navigation ve EPUB 2 NCX içindekiler yapıları üretilir
 - Çevrilmiş dosyadaki ilk `#` başlığı ilgili bölümün içindekiler adı olarak kullanılır
 - İçe aktarıcının teknik amaçla eklediği ilk başlık sayfa gövdesinde gizlenir
+- ZIP sırası/mimetype, container, OPF manifest/spine, XML, yerel görsel ve iç bağlantı hedefleri her üretimde dahili olarak doğrulanır
 
 Çıktı adı `<Orijinal Dosya Adı> TR.epub` biçimindedir. Aynı ad varsa `TR-2`, `TR-3` şeklinde artırılır.
+
+### İsteğe bağlı EPUBCheck
+
+**Ayarlar → EPUBCheck** etkinleştirilirse dahili doğrulamadan sonra harici EPUBCheck de çalıştırılır. **EPUBCheck yolu** alanına resmi dağıtımdaki `epubcheck.jar` veya çalıştırılabilir dosya yazılabilir. Alan boşsa PATH içindeki `epubcheck` aranır. JAR kullanımı için Java'nın PATH içinde olması gerekir. EPUBCheck hata verirse oluşturulan EPUB silinmez; rapor Konsol ve `translation.log` içine yazılır, işlem hata olarak bildirilir.
+
+Yeni tablo/dipnot eşlemesi import sürümü 4 ile oluşturulur. Eski proje klasörleri çevrilmeye devam eder ancak eski importta kaybolmuş dipnot hedefleri geriye dönük üretilemez; bu özellikler gerekiyorsa kaynak EPUB yeni bir proje klasörüne tekrar içe aktarılmalıdır.
 
 ## Proje klasörü
 
@@ -245,7 +271,7 @@ py -3 cevir.py --book "D:\Kitaplar\kitap-ceviri" --analyze ^
 ## Windows `.exe` oluşturma
 
 1. Proje klasöründe `BUILD.cmd` dosyasını çalıştırın.
-2. Komut dosyası bağımlılıkları kurar ve PyInstaller'ı tek dosya/pencereli modda çalıştırır.
+2. Komut dosyası `requirements.txt` içinde kesin sürümle sabitlenmiş PySide6 ve PyInstaller bağımlılıklarını kurar ve PyInstaller'ı tek dosya/pencereli modda çalıştırır.
 3. Sonuçlar `dist` klasörüne yazılır:
 
 ```text
@@ -255,7 +281,7 @@ dist/
 └── translation_prompt.txt
 ```
 
-Antivirüslerin yeni ve imzasız PyInstaller dosyalarında yanlış pozitif üretmesi mümkündür.
+Dağıtım yaparken bu üç dosyayı aynı klasörde tutup birlikte ZIP'leyin. Logo ve gerekli uygulama varlıkları `.exe` içine eklenir. Antivirüslerin yeni ve imzasız PyInstaller dosyalarında yanlış pozitif üretmesi mümkündür; kullanıcılar için kaynak kodu ve dosya hash'ini yayımlamak güven artırır.
 
 ## Kaynak dosyaların görevleri
 
@@ -281,7 +307,7 @@ Proje kökünde:
 py -3 -m unittest discover -s tests -v
 ```
 
-Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştırma, kontrol noktası, yeniden deneme ve EPUB üretiminin programatik davranışlarını denetler. Gerçek model kalitesi seçilen modele, quantization düzeyine, context ayarına ve kaynak metne bağlıdır.
+Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştırma, kontrol noktası, yeniden deneme, kısa yardımcı sayfa tamamlanması, yapısal hedef koruması, tablo/dipnot dönüşümü, yalnızca görsel bölüm atlama, EPUBCheck komutu ve EPUB üretiminin programatik davranışlarını denetler. Gerçek model kalitesi seçilen modele, quantization düzeyine, context ayarına ve kaynak metne bağlıdır.
 
 ## Gizlilik ve güvenlik
 
@@ -297,15 +323,12 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 
 - DRM korumalı EPUB dosyaları desteklenmez.
 - Taranmış sayfalardan OCR yapılmaz.
-- Çok karmaşık tablolar, etkileşimli öğeler ve özel JavaScript davranışları sadeleşebilir.
-- Yerel model tutarlı terim ve üslup kararlarına rağmen hata veya uydurma üretebilir. Çoğu modelin Türkçe çevirisi iyi değil, kısa metinlerde deneyip kendinize uygun olanı bulun.
+- Basit tablolar korunur; `rowspan`/`colspan`, karmaşık CSS sayfa düzenleri, şiirsel boşluklar, etkileşimli öğeler ve JavaScript davranışları sadeleşebilir.
+- Kaynak stil dosyaları varlık olarak kopyalansa da çevrilmiş sayfalar Çevirgeç'in sade ve okunabilir CSS dosyasını kullanır; yayınevinin sayfa tasarımı birebir çoğaltılmaz.
+- Yerel model tutarlı terim ve üslup kararlarına rağmen hata veya uydurma üretebilir.
 - Zorla işlem sonlandırılırsa yalnızca son tamamlanmış kontrol noktasına kadar olan çalışma korunur.
 - Son EPUB'un Calibre ve en az bir farklı okuyucuda kontrol edilmesi önerilir.
 
-## Bilinen sorunlar
-- Çeviriden sonra oluşan Epub dosyasında ekstra kapak,content başlığı üretiyor.
-- Model kaynaklı, Eksik tamamlanma işareti,boş veya biçimsel olarak geçersiz model yanıtı,yanıta karışan araç/düşünme metni.Buna workaround olarak olarak o bölüm tekrar deneniyor iki defa.
-- Çalışırken durdurup, LM studioda başka bir model yükleyip bunu gösterirseniz çalışmıyor, eski modeli ayağı kaldırıp ondan devam ediyor. Programı kapayıp açmadan düzelmiyor.
 
 ## Sorun giderme
 
@@ -314,11 +337,44 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 | Model görünmüyor | LM Studio sunucusunun açık ve modelin gerçekten yüklü olduğunu doğrulayın; **Yenile**'ye basın |
 | Bağlantı reddedildi | Base URL'yi ve LM Studio portunu kontrol edin |
 | Context yetersiz | Parça boyutunu veya çıktı token payını azaltın; doğru yüklü modelin seçildiğini doğrulayın |
-| Yanıt tamamlanmadı | Otomatik denemeleri bekleyin; sürerse çıktı token payını artırın veya parçayı küçültün |
+| Yanıt tamamlanmadı | Otomatik denemeleri bekleyin; sürerse **İşaretsiz sınır** değerini yükseltin veya **Bitiş işareti denetimi**ni kapatın. Denetimi kapatmak eksik metin riskini artırır; boş/bozuk çıktı, token sınırı ve EPUB yapısı yine denetlenir |
 | Ön analiz JSON hatası | İki otomatik yeniden deneme yapılır; sürerse modeli/temperature değerini kontrol edin |
-| Sözlük karşılığı eksik | Terimin yazımını kontrol edin; model üç denemede de uygulayamıyorsa daha güçlü model deneyin |
+| Sözlük karşılığı eksik | `glossary_fixes.log` dosyasındaki parçaları kontrol edin; terim Türkçe çekimli (kitabı, ağacın, Işıkları) geçiyorsa kabul edilir, farklı sözcük seçilmişse o bölümü sağ tıkla yeniden çevirin veya daha güçlü model deneyin |
 | Proje uyuşmazlığı | Kaynak, prompt, sözlük veya checkpoint dosyalarını çalışma sırasında elle değiştirmeyin |
 | Görseller eski projede bozuk | Eski içe aktarma biçimindeki proje yerine kaynak EPUB'dan yeni proje oluşturun |
+| Yapısal EPUB işaretleri korunmadı | Model bir `epub-resource:`, `epub-link:` veya `EPUB_ANCHOR` hedefini değiştirmiştir; otomatik denemeler de başarısızsa farklı model kullanın veya parçayı yeniden çevirin |
+| EPUBCheck yolu bulunamadı | Ayarlara resmi `epubcheck.jar`/EXE yolunu yazın; JAR kullanıyorsanız Java'yı PATH'e ekleyin |
+| EPUBCheck hata verdi | Konsol/`translation.log` raporunu inceleyin; oluşturulan EPUB silinmez |
 | DRM/şifreleme hatası | DRM'siz ve kullanma hakkına sahip olduğunuz bir EPUB kullanın |
 
 Daha ayrıntılı kullanım notları için [KULLANIM.md](KULLANIM.md) dosyasına bakın.
+
+## GitHub'a yükleme
+
+Kaynak kodu GitHub'a göndermeden önce `.gitignore` dosyasını koruyun. Bu dosya üretilmiş `.exe`, çalışma klasörleri, EPUB kitapları, loglar, sanal ortamlar ve Python önbelleklerinin yanlışlıkla depoya eklenmesini engeller.
+
+GitHub'da boş bir `Cevirgec` deposu oluşturun. Mevcut yerel proje gönderileceği için oluşturma ekranında README, `.gitignore` ve lisans ekleme seçeneklerini işaretlememek en kolay yoldur. Ardından proje klasöründe:
+
+```bat
+git init
+git add .
+git status
+git commit -m "İlk Çevirgeç sürümü"
+git branch -M main
+git remote add origin https://github.com/KULLANICI_ADIN/Cevirgec.git
+git push -u origin main
+```
+
+`KULLANICI_ADIN` bölümünü GitHub kullanıcı adınızla değiştirin. Sonraki güncellemelerde:
+
+```bat
+git add .
+git commit -m "Değişiklikleri açıkla"
+git push
+```
+
+Kullanıcıların hazır uygulamayı indirebilmesi için `dist` klasörünü kaynak depoya commit etmeyin. Bunun yerine `Cevirgec.exe`, `config.json` ve `translation_prompt.txt` dosyalarını birlikte ZIP'leyin; GitHub'da **Releases → Draft a new release** üzerinden örneğin `v1.0.0` etiketiyle bu ZIP'i sürüm varlığı olarak ekleyin. İlk commit'ten önce `LICENSE` dosyasındaki telif satırını kendi adınızla güncellemek isterseniz `LICENSE`'in ilk satırını düzenleyin.
+
+## Lisans
+
+MIT

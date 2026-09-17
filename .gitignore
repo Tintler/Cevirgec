@@ -12,5 +12,13 @@ venv/
 Thumbs.db
 *.epub
 *.log
+*.lock
 *-ceviri/
 *-ceviri-*/
+
+# Gelistirme/devir belgesi (kisisel, GitHub'a gitmez)
+GELISTIRME.md
+
+# Kisisel yerel notlar ve yedekler
+*.bak
+*~

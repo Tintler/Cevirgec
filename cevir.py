@@ -3,7 +3,19 @@ import argparse
 import sys
 from pathlib import Path
 
-from app_core import Client, GracefulStop, TranslationEngine, load_config
+from app_core import Client, GracefulStop, TranslationEngine, analysis_terms, load_config
+
+def make_logger(book):
+    """CLI icin hem stdout'a yazdiran hem de proje icindeki translation.log'a ekleyen log fonksiyonu."""
+    log_path = Path(book) / 'translation.log'
+
+    def log(message):
+        print(message)
+        with log_path.open('a', encoding='utf-8', newline='\n') as stream:
+            stream.write(str(message) + '\n')
+            stream.flush()
+
+    return log
 
 
 def resolve_input(value, explicit_book=False, choose=input):
@@ -37,7 +49,30 @@ def resolve_input(value, explicit_book=False, choose=input):
     return epubs[int(selection) - 1], True
 
 
-def main():
+def review_analysis_terms(engine, book, confirm=input):
+    """G16: On analiz onerilerini CLI'da kullaniciya gosterir ve onaya sunar.
+
+    Evet denirse oneriler glossary.json'a islenir (duplicate onlenir);
+    hayir/atlanirsa mevcut glossary aynen kalir. Onay islemi testlerde
+    `confirm` parametresiyle soketlenir.
+    """
+    terms = analysis_terms(book)
+    if not terms:
+        return False
+    print('\nOn analiz su terim onerilerini buldu:')
+    for item in terms:
+        scope = '' if item.get('scope', 'book') == 'book' else '  (bolum ozel; otomatik eklenmez)'
+        print(f"  - {item.get('source', '')} -> {item.get('suggested_target', '')}{scope}")
+    answer = confirm('Kitap geneli oneriler glossary.json ile birlestirilsin mi? Mevcut kayitlar korunur. [e/H]: ').strip().lower()
+    if answer in ('e', 'evet', 'y', 'yes'):
+        engine._merge_analysis_terms_into_glossary(book)
+        print('Oneriler glossary.json ile birlestirildi.')
+        return True
+    print('Oneriler reddedildi; mevcut glossary korunuyor.')
+    return False
+
+
+def main(confirm=input):
     parser = argparse.ArgumentParser(description='LM Studio ile EPUB/Markdown cevirisi.')
     parser.add_argument('--epub', help='EPUB dosyasini bol, cevir ve EPUB olustur')
     parser.add_argument('--book', help='Hazir calisma klasoru')
@@ -63,9 +98,10 @@ def main():
         book = prepare(selected)
     else:
         book = selected
-    engine = TranslationEngine(load_config)
+    engine = TranslationEngine(load_config, log=make_logger(book))
     if args.analyze or args.analyze_file:
         engine.run_analysis(book, args.analyze_file)
+        review_analysis_terms(engine, book, confirm=confirm)
     engine.run_book(book, single_file=args.file, build_epub=not bool(args.file))
     print('Tamamlandi:', book)
 

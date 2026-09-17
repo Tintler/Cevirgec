@@ -4,6 +4,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections import Counter
+
+try:
+    import msvcrt  # Windows tabanli dosya bolgesi kilidi (FileLock)
+except ImportError:  # Windows disindaki ortamlar (ornegin CI) icin
+    msvcrt = None
+try:
+    import fcntl  # POSIX: gelistirme/test ortamlari icin esdeger OS kilidi (G30)
+except ImportError:
+    fcntl = None
+from datetime import datetime
 from pathlib import Path
 import re
 import secrets
@@ -24,18 +35,33 @@ DEFAULT_CONFIG = {
     'token_estimation_enabled': True,
     'fallback_context_length': 32768,
     'context_safety_tokens': 2048,
+    'glossary_strict': False,
+    'completion_marker_enabled': True,
+    'completion_marker_exempt_chars': 400,
+    'epubcheck_enabled': False,
+    'epubcheck_path': '',
 }
 
 ANALYSIS_VERSION = 2
 ANALYSIS_AUTO_RETRIES = 2
 TRANSLATION_AUTO_RETRIES = 2
+LIVE_MARKER_CONFIG_KEYS = ('completion_marker_enabled', 'completion_marker_exempt_chars')
+# G22: Referans (kitap baglami) context'in bu oranini asinca, yuzde esigi
+# beklenmeden notlar sikistirilir.
+REFERENCE_BUDGET_RATIO = 0.4
+DECISIONS_PROMPT = ('Extract only durable translation decisions from the notes: glossary pairs, proper noun renderings, '
+                    'address forms (sen/siz) between named characters, recurring phrase renderings and fixed style decisions. '
+                    'Merge them with EXISTING DECISIONS; keep existing decisions unless the new notes explicitly replace them. '
+                    'Return the complete updated list as concise Markdown bullets in Turkish. No plot summary, no commentary. Do not invent facts.')
+COMPRESS_PROMPT = ('Compress only plot/continuity summaries into concise Turkish Markdown. '
+                   'Do not output or alter glossary, proper nouns, address forms, or style decisions.')
 ANALYSIS_RESPONSE_ERROR_PREFIXES = (
     'On analiz ', 'Yanit ', 'Beklenmeyen API cikti', 'Cikti token sinirina ulasti',
     'Bos veya kod blogu', 'Gorunur newline',
 )
 TRANSLATION_RESPONSE_ERROR_PREFIXES = (
     'Yanit tamamlanma isareti', 'Beklenmeyen API cikti', 'Bos veya kod blogu',
-    'Yanit dusunce/tool isaretleri', 'Gorunur newline kacislari', 'Glossary zorunlulugu',
+    'Yanit dusunce/tool isaretleri', 'Gorunur newline kacislari', 'Yapisal EPUB isaretleri',
 )
 ANALYSIS_PROMPT = '''Analyze only the supplied fragment before translation. Return only valid JSON, without Markdown fences or commentary, using this exact shape:
 {"summary":"short Turkish summary","characters":[{"name":"name","facts":["source-grounded fact"],"voice":["speech or inner-voice observation"],"scope":"book|chapter"}],"terms":[{"source":"English term","suggested_target":"Turkish suggestion","reason":"short reason","scope":"book|chapter"}],"style":[{"observation":"source-grounded style observation","scope":"book|chapter"}],"changes":["change in voice, relationship, role, mood or narrative style within this fragment"],"ambiguities":["translation risk or ambiguity"]}
@@ -54,6 +80,15 @@ def retryable_translation_error(error):
         return (message.startswith(('LM Studio baglantisi kurulamadi', 'LM Studio istegi zaman asimina ugradi')) or
                 bool(re.match(r'HTTP (?:408|429|5\d\d):', message)))
     return False
+
+
+def translation_requires_completion_marker(source, cfg=None):
+    """Kullanici ayarina gore ceviri parcasinin yapay bitis isareti gereksinimi."""
+    cfg = cfg or DEFAULT_CONFIG
+    if not bool(cfg.get('completion_marker_enabled', True)):
+        return False
+    limit = int(cfg.get('completion_marker_exempt_chars', 400))
+    return len(str(source).strip()) > limit
 
 
 class PauseController:
@@ -122,6 +157,67 @@ def save_json(path, value):
     atomic(path, json.dumps(value, ensure_ascii=False, indent=2) + '\n')
 
 
+class FileLock:
+    """Windows OS file-region lock (msvcrt).
+
+    A plain 'lock file' checks whether a file exists, so a crashed run leaves
+    a stale file that blocks every later run. Here the lock is owned by the
+    operating system and is released automatically when the owning process
+    exits. The lock file itself may remain on disk -- that is harmless, only
+    the region lock has meaning.
+    """
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._handle = None
+
+    def acquire(self):
+        if msvcrt is None and fcntl is None:  # pragma: no cover
+            raise RuntimeError('Proje kilidi bu isletim sisteminde desteklenmiyor.')
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = os.open(self.path, os.O_RDWR | os.O_CREAT | getattr(os, 'O_BINARY', 0))
+        try:
+            if msvcrt is not None:
+                if os.fstat(handle).st_size < 1:
+                    os.write(handle, b'\x00')  # kilit bolgesi icin en az 1 bayt
+                os.lseek(handle, 0, os.SEEK_SET)
+                msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(handle)
+            raise RuntimeError(
+                'Bu proje baska bir Cevirgec tarafindan kullaniliyor ya da '
+                'kilidi alinamiyor. Baska Cevirgec orneklerini kapatip yeniden deneyin.'
+            ) from None
+        self._handle = handle
+        return self
+
+    def release(self):
+        handle, self._handle = self._handle, None
+        if handle is None:
+            return
+        try:
+            if msvcrt is not None:
+                os.lseek(handle, 0, os.SEEK_SET)
+                msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+        finally:
+            os.close(handle)
+            try:
+                self.path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def __enter__(self):
+        return self.acquire()
+
+    def __exit__(self, exc_type, exc, traceback_):
+        self.release()
+        return False
+
+
 def load_config(path=None):
     path = Path(path or APP_DIR / 'config.json')
     value = dict(DEFAULT_CONFIG)
@@ -141,8 +237,124 @@ def validate_config(cfg):
     for key in ('chunk_chars', 'max_tokens', 'notes_max_tokens', 'timeout_seconds', 'fallback_context_length'):
         if int(cfg[key]) <= 0:
             raise ValueError(f'{key} sifirdan buyuk olmali.')
+    if not isinstance(cfg['completion_marker_enabled'], bool):
+        raise ValueError('completion_marker_enabled true veya false olmali.')
+    if not 0 <= int(cfg['completion_marker_exempt_chars']) <= 1000000:
+        raise ValueError('completion_marker_exempt_chars 0 ile 1000000 arasinda olmali.')
     if not 0 <= float(cfg['temperature']) <= 2:
         raise ValueError('temperature 0 ile 2 arasinda olmali.')
+
+
+def markdown_spans(text, image_only=False):
+    """Dengeli parantezli Markdown baglanti/gorsellerini dondurur.
+
+    Basit regex ``cover(1).jpg`` hedefini ilk kapanan parantezde keser. Bu
+    tarayici kacis karakterlerini ve ic ice parantezleri korur. Sonuc
+    ``(baslangic, bitis, gorunen_metin, hedef)`` dortluleridir.
+    """
+    prefix = '![' if image_only else '['
+    index = 0
+    while True:
+        start = text.find(prefix, index)
+        if start < 0:
+            return
+        if not image_only and text[start:start + 2] == '[[':
+            index = start + 2
+            continue
+        if not image_only and start > 0 and text[start - 1] == '!':
+            index = start + 1
+            continue
+        label_start = start + len(prefix)
+        label_end = label_start
+        while label_end < len(text):
+            if text[label_end] == '\\':
+                label_end += 2
+                continue
+            if text[label_end:label_end + 2] == '](':
+                break
+            label_end += 1
+        if text[label_end:label_end + 2] != '](':
+            index = start + len(prefix)
+            continue
+        target_start = label_end + 2
+        cursor, depth = target_start, 1
+        while cursor < len(text):
+            char = text[cursor]
+            if char == '\\':
+                cursor += 2
+                continue
+            if char == '(':
+                depth += 1
+            elif char == ')':
+                depth -= 1
+                if depth == 0:
+                    yield start, cursor + 1, text[label_start:label_end], text[target_start:cursor]
+                    index = cursor + 1
+                    break
+            cursor += 1
+        else:
+            index = start + len(prefix)
+
+
+def protected_epub_tokens(text):
+    """Modelin degistirmemesi gereken EPUB hedeflerini sayimli olarak toplar."""
+    images = Counter(target for _start, _end, _alt, target in markdown_spans(text, image_only=True)
+                     if target.startswith('epub-resource:'))
+    links = Counter(target for _start, _end, _label, target in markdown_spans(text)
+                    if target.startswith('epub-link:'))
+    anchors = Counter(re.findall(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]', text))
+    def cells(line):
+        value = line.strip().strip('|')
+        return re.split(r'(?<!\\)\|', value)
+
+    tables = Counter()
+    lines = text.splitlines()
+    index = 0
+    while index + 1 < len(lines):
+        first, separator = cells(lines[index]), cells(lines[index + 1])
+        if (len(first) > 1 and len(first) == len(separator)
+                and all(re.fullmatch(r'\s*:?-{3,}:?\s*', item) for item in separator)):
+            row_count = 1
+            cursor = index + 2
+            while cursor < len(lines) and len(cells(lines[cursor])) == len(first) and '|' in lines[cursor]:
+                row_count += 1; cursor += 1
+            tables[f'{len(first)}x{row_count}'] += 1
+            index = cursor
+            continue
+        index += 1
+    return {'gorsel': images, 'ic baglanti': links, 'capa': anchors, 'tablo yapisi': tables}
+
+
+def validate_translation_structure(source, translated):
+    """Kaynak EPUB'un yapisal belirteclerinin ceviride aynen kaldigini dogrular."""
+    source_tokens = protected_epub_tokens(source)
+    translated_tokens = protected_epub_tokens(translated)
+    problems = []
+    for label in source_tokens:
+        if source_tokens[label] != translated_tokens[label]:
+            missing = source_tokens[label] - translated_tokens[label]
+            extra = translated_tokens[label] - source_tokens[label]
+            detail = []
+            if missing:
+                detail.append('eksik=' + ', '.join(missing.elements()))
+            if extra:
+                detail.append('fazla/degismis=' + ', '.join(extra.elements()))
+            problems.append(label + ' (' + '; '.join(detail) + ')')
+    if problems:
+        raise ValueError('Yapisal EPUB isaretleri korunmadi: ' + ' | '.join(problems))
+
+
+def image_only_source(text):
+    """Teknik TOC basligi disinda yalnizca gorsel/isaret tasiyan bolum mu?"""
+    images = list(markdown_spans(text, image_only=True))
+    if not images:
+        return False
+    body = re.sub(r'\A\s*#{1,6}[^\n]*(?:\n[ \t]*)?\n?', '', text, count=1)
+    for start, end, _alt, _target in reversed(list(markdown_spans(body, image_only=True))):
+        body = body[:start] + body[end:]
+    body = re.sub(r'\[\[EPUB_ANCHOR:[^\]]+\]\]', '', body)
+    body = re.sub(r'(?m)^\s*(?:\*\s*){3,}\s*$', '', body)
+    return not bool(re.search(r'[^\W\d_]', body, re.UNICODE))
 
 
 def prompt_path():
@@ -179,8 +391,21 @@ def split_source(text, limit):
         if current:
             result.append(current)
             current = ''
-        # A single pathological paragraph must not defeat context protection.
-        result.extend(paragraph[start:start + limit] for start in range(0, len(paragraph), limit))
+        # A single pathological paragraph must not defeat context protection;
+        # EPUB hedef belirteci de iki istek arasinda ortadan kesilmemeli.
+        protected = [(start, end) for start, end, _label, _target in markdown_spans(paragraph, image_only=True)]
+        protected += [(start, end) for start, end, _label, _target in markdown_spans(paragraph)]
+        protected += [(match.start(), match.end()) for match in re.finditer(r'\[\[EPUB_ANCHOR:[^\]]+\]\]', paragraph)]
+        start = 0
+        while start < len(paragraph):
+            end = min(start + limit, len(paragraph))
+            crossing = next(((left, right) for left, right in protected if left < end < right), None)
+            if crossing:
+                end = crossing[1] if crossing[0] <= start else crossing[0]
+            if end <= start:
+                end = min(start + limit, len(paragraph))
+            result.append(paragraph[start:end])
+            start = end
     if current:
         result.append(current)
     assert ''.join(result) == text
@@ -192,18 +417,138 @@ def first_heading(text, fallback):
     return match.group(1).strip() if match else fallback
 
 
+def _word_regex(pattern, flags=0):
+    return re.compile(r'\b(?:' + pattern + r')\b', flags)
+
+
+def source_term_regex(term):
+    """Ingilizce kaynak terimi tam kelime olarak arar (G17); yalnizca -s/-es ve
+    iyelik 's eklerine izin verir: "Ash" -> "Ash's" evet, "ashamed" hayir."""
+    return re.compile(r'(?<!\w)' + re.escape(term) + r"(?:s|es|'s|’s)?(?!\w)", re.I)
+
+
+def tr_lower(text):
+    """Turkce kucuk harf: I -> ı, İ -> i (str.lower/casefold bunu yanlis yapar)."""
+    return str(text).replace('I', 'ı').replace('İ', 'i').lower()
+
+
+def _harmony(*templates):
+    result = set()
+    for template in templates:
+        if 'I' in template:
+            result.update(template.replace('I', vowel) for vowel in 'ıiuü')
+        elif 'A' in template:
+            result.update(template.replace('A', vowel) for vowel in 'ae')
+        else:
+            result.add(template)
+    return result
+
+
+def _expand_consonants(values):
+    result = set()
+    for value in values:
+        if 'D' in value:
+            result.update(value.replace('D', letter) for letter in 'dt')
+        elif 'C' in value:
+            result.update(value.replace('C', letter) for letter in 'cç')
+        else:
+            result.add(value)
+    return result
+
+
+# Turkce isim cekim ekleri ve ek-fiiller (G24). Yapim ekleri (-lı, -cı, -lık)
+# kasitli olarak YOK: "yapılı", "külot" glossary karsiligi sayilmaz.
+_TURKISH_SUFFIX_TOKENS = frozenset(_expand_consonants(
+    _harmony('lAr', 'I', 'sI', 'yI', 'nI', 'A', 'yA', 'nA', 'DA', 'nDA', 'DAn', 'nDAn',
+             'In', 'nIn', 'lA', 'ylA', 'Im', 'm', 'n', 'ImIz', 'mIz', 'InIz', 'nIz',
+             'CA', 'ki', 'ken', 'yken', 'DIr', 'DI', 'yDI', 'sA', 'ysA', 'mIş', 'ymIş')
+    | {'nDAki', 'DAki'}
+))
+
+
+def _is_suffix_chain(rest, _cache={}):
+    if rest in _cache:
+        return _cache[rest]
+    if not rest:
+        return True
+    if len(rest) > 18:
+        return False
+    found = any(rest.startswith(token) and _is_suffix_chain(rest[len(token):]) for token in _TURKISH_SUFFIX_TOKENS)
+    _cache[rest] = found
+    return found
+
+
+_SOFTEN = {'p': 'b', 'ç': 'c', 't': 'd', 'k': 'ğ'}
+_VOWELS = set('aeıioöuüâîû')
+
+
+def _stem_variants(word):
+    """Hedef kelimenin cekim sirasinda alabilecegi govde bicimleri:
+    kitap -> kitab, ağaç -> ağac, renk -> reng, burun -> burn, Yapılar -> yapı."""
+    variants = {word}
+    last = word[-1:]
+    if last in _SOFTEN and len(word) >= 3:
+        variants.add(word[:-1] + _SOFTEN[last])
+        if last == 'k' and word[-2:-1] == 'n':
+            variants.add(word[:-1] + 'g')
+    if (len(word) >= 4 and word[-1] not in _VOWELS and word[-2] in _VOWELS
+            and word[-3] not in _VOWELS):
+        variants.add(word[:-2] + word[-1])
+    # Glossary karsiligi cogul yazilmissa ("Yapılar") tekil kullanimi da kabul.
+    for plural in ('lar', 'ler'):
+        index = word.find(plural)
+        if index >= 2 and _is_suffix_chain(word[index:]):
+            variants.add(word[:index])
+    return variants
+
+
+def _target_search(target, text):
+    """Glossary karsiliginin ceviride Turkce cekimli olarak gecip gecmedigini denetler.
+
+    Metindeki kelime, hedefin govde bicimlerinden biriyle baslamali ve geriye
+    kalan kisim yalnizca bilinen cekim eklerinden olusmali. Cok kelimeli
+    hedeflerde onceki kelimeler aynen ve ardisik gecmeli; ek yalnizca son kelimeye gelir.
+    """
+    target_words = re.findall(r'[^\W\d_]+', tr_lower(target))
+    if not target_words:
+        return False
+    words = re.findall(r'[^\W\d_]+', tr_lower(text))
+    head, last = target_words[:-1], target_words[-1]
+    variants = sorted(_stem_variants(last), key=len, reverse=True)
+    for index in range(len(head), len(words)):
+        if words[index - len(head):index] != head:
+            continue
+        word = words[index]
+        if any(word.startswith(variant) and _is_suffix_chain(word[len(variant):]) for variant in variants):
+            return True
+    return False
+
+
+def _dedupe_glossary(items):
+    """Ayni kaynak terimi (casefold) yalnizca ilk kaydiyla korur; bos kayitlari atlar.
+
+    Duplicate onleme: hem kullanici elle duzenlenmis glossary.json hem de eski
+    checkpoint state'lerindeki glossary listeleri bu filtreye tabi tutulur.
+    """
+    result, seen = [], set()
+    for item in items or []:
+        source = str(item.get('source', '')).strip()
+        target = str(item.get('target', '')).strip()
+        if not source or not target:
+            continue
+        key = source.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append({'source': source, 'target': target})
+    return result
+
+
 def load_glossary(book):
     path = Path(book) / 'glossary.json'
     if not path.exists():
         return []
-    data = json.loads(read(path))
-    result = []
-    for item in data:
-        source = str(item.get('source', '')).strip()
-        target = str(item.get('target', '')).strip()
-        if source and target:
-            result.append({'source': source, 'target': target})
-    return result
+    return _dedupe_glossary(json.loads(read(path)))
 
 
 def glossary_text(items):
@@ -222,10 +567,25 @@ def note_sections(context):
     return [(match.group(1).strip(), match.group(2).strip()) for match in re.finditer(pattern, context, re.M | re.S)]
 
 
-def book_data(book, context, filename=None):
-    state_path = Path(book) / '_python_translation' / 'book-state.json'
-    state = json.loads(read(state_path)) if state_path.exists() else {}
-    cutoff = int(state.get('summary_note_count', 0))
+def load_book_state(book):
+    path = Path(book) / '_python_translation' / 'book-state.json'
+    return json.loads(read(path)) if path.exists() else {}
+
+
+def compressed_note_names(state, sections):
+    """Sikistirilmis not bolumlerinin DOSYA ADLARI (G21).
+
+    Eski surum `summary_note_count` sira numarasi tutuyordu; yeniden ceviride
+    notlar sona tasininca sira kayiyor ve sikistirilmamis notlar gizleniyordu.
+    Eski state okunurken sira numarasi o anki bolum adlarina cevrilir."""
+    if 'compressed_notes' in state:
+        return set(state['compressed_notes'])
+    count = int(state.get('summary_note_count', 0))
+    return {name for name, _notes in sections[:count]}
+
+
+def book_data(book, context, filename=None, recheck=False):
+    state = load_book_state(book)
     parts = [fixed_context(context)]
     selected_analysis = load_analysis_selection(book)
     analysis_applies = bool(filename and filename in selected_analysis)
@@ -236,10 +596,24 @@ def book_data(book, context, filename=None):
         chapter_analysis = Path(book) / '_python_analysis' / (filename + '.reference.md')
         if chapter_analysis.exists():
             parts.extend([f'## Current Chapter Pre-analysis Reference — {filename}', read(chapter_analysis).strip()])
+    decisions = Path(book) / '_python_translation' / 'continuity-decisions.md'
+    if decisions.exists() and read(decisions).strip():
+        # G23: Sikistirma olay ozetini kisaltirken terim/isim/hitap kararlari
+        # burada kalici tutulur. Olay orgusu icermedigi icin yeniden ceviride de verilir.
+        parts.extend(['## Continuity Decisions (terms, names, address forms)', read(decisions).strip()])
     summary = Path(book) / '_python_translation' / 'continuity-summary.md'
-    if summary.exists():
+    if summary.exists() and not recheck:
+        # Yeniden ceviride sikistirilmis olay ozeti verilmez: yapisal olarak
+        # bolumlere ayrıstirilamaz ve sonraki bolumlere ait olay orgusu icerebilir.
         parts.extend(['## Compressed Section Summaries', read(summary).strip()])
-    remaining = note_sections(context)[cutoff:]
+    sections = note_sections(context)
+    compressed = compressed_note_names(state, sections)
+    remaining = [item for item in sections if item[0] not in compressed]
+    if recheck and filename:
+        order = [name for name, _status in rows(context)]
+        if filename in order:
+            allowed = set(order[:order.index(filename)])
+            remaining = [item for item in remaining if item[0] in allowed]
     parts.extend(f'## Translation notes — {name}\n{notes}' for name, notes in remaining)
     return '\n\n'.join(part for part in parts if part)
 
@@ -337,8 +711,15 @@ def merge_analysis(chapters):
                         candidate = character_candidates.setdefault(candidate_key, {'name': item['name'], 'fact': fact, 'chapters': set()})
                         candidate['chapters'].add(chapter['filename'])
             for item in part['terms']:
-                term_map.setdefault((item['source'].casefold(), item['suggested_target'].casefold()), item)
+                # Ayni kaynak terim yalnizca ILK karşiligiyla tutulur. Anahtar
+                # source+target cifti olursa ayni source iki farkli karşilikla
+                # iki ayri kayit olur (G16 duplicate kayit sorunu; bkz. Martha
+                # Wells projesindeki Corporation Rim ornegi).
+                term_map.setdefault(item['source'].casefold(), item)
                 if item['scope'] == 'book' and item['suggested_target']:
+                    # Kitap geneli adaylar: ayni source icin birden cok farkli
+                    # karşilik toplanirsa guvenilir sayilmaz; asagidaki
+                    # len(targets) == 1 kosulu bu celiskiyi global listeden eler.
                     source_key = item['source'].casefold()
                     targets = term_candidates.setdefault(source_key, {})
                     candidate = targets.setdefault(item['suggested_target'].casefold(), {'source': item['source'], 'suggested_target': item['suggested_target'], 'reason': item['reason'], 'chapters': set()})
@@ -427,6 +808,36 @@ def analysis_from_checkpoints(book, filenames=None):
     return merge_analysis(chapters) if chapters else None
 
 
+def analysis_terms(book):
+    """On analiz checkpoint'lerinden terim onerilerini tek listeye indirger (G16).
+
+    Kitap geneli (global) terimler once gelir; ayni source.casefold() icin ILK
+    karşılik kazanir (duplicate olusmaz). Cikti elemanlari
+    {"source", "suggested_target", "reason"} bicimindedir.
+    """
+    merged = analysis_from_checkpoints(Path(book))
+    if merged is None:
+        return []
+    result, seen = [], set()
+    # G26: kapsam bilgisi korunur. Dogrulanmis global oneriler ve modelin kitap
+    # geneli ('book') dedigi oneriler varsayilan olarak sozluge onerilir; yalnizca
+    # bolume ozgu ('chapter') oneriler isaretsiz gelir ve otomatik birlestirilmez.
+    items = [dict(item, scope='book') for item in merged['global']['terms']]
+    for chapter in merged['chapters']:
+        items.extend(dict(item, scope=item.get('scope') or 'chapter') for item in chapter['terms'])
+    for item in items:
+        source = str(item.get('source', '')).strip()
+        target = str(item.get('suggested_target', '') or '').strip()
+        if not source or not target:
+            continue
+        key = source.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
 def write_analysis_outputs(book, filenames):
     book = Path(book); analysis_dir = book / '_python_analysis'
     merged = analysis_from_checkpoints(book, filenames)
@@ -464,6 +875,146 @@ def update_context(context, filename, notes):
         output.append(line)
     output += ['', f'## Translation notes — {filename}', '', notes.strip(), '']
     return '\n'.join(output), next_name
+
+
+def remove_translation_notes(context, filename):
+    """00-CONTEXT icinden verilen dosyaya ait eski not bolumunu kaldirir."""
+    pattern = re.compile(r'^## Translation notes — ' + re.escape(filename) + r'\s*\n.*?(?=^## |\Z)', re.M | re.S)
+    return pattern.sub('', context)
+
+
+def rebase_partial_states(book, old_context, new_context, exclude=None):
+    """G21: 00-CONTEXT.md bu surec tarafindan degistirildiginde yarim kalmis
+    bolumlerin `context_before` anlik goruntusunu yeni metne tasir. Aksi halde
+    yarim bolum "Baglam dosyasi is basladiktan sonra degismis" hatasiyla kilitlenir.
+    Bolumun referansi (`reference`) ve parcalari degismez."""
+    if old_context == new_context:
+        return []
+    moved = []
+    for state_path in sorted((Path(book) / '_python_translation').glob('*/state.json')):
+        filename = state_path.parent.name
+        if filename == exclude:
+            continue
+        state = json.loads(read(state_path))
+        if state.get('complete') or state.get('context_before') != old_context:
+            continue
+        state['context_before'] = new_context
+        if 'context_after' in state and state.get('notes') is not None:
+            after, next_name = update_context(new_context, filename, state['notes'])
+            state.update(context_after=after, next_file=next_name)
+        save_json(state_path, state)
+        moved.append(filename)
+    return moved
+
+
+def write_context(book, old_context, new_context, exclude=None):
+    """00-CONTEXT.md'yi atomik yazar ve yarim bolum checkpointlerini tasir."""
+    atomic(Path(book) / '00-CONTEXT.md', new_context)
+    return rebase_partial_states(book, old_context, new_context, exclude=exclude)
+
+
+def _check_filename(filename):
+    if Path(filename).name != filename or any(char in filename for char in ('/', '\\', ':')):
+        raise ValueError('Dosya adi calisma klasoru disina cikamaz.')
+
+
+def validate_rerun(book, filenames):
+    """Yeniden ceviri oncesi tum secimi dogrular; hicbir dosyaya dokunmaz."""
+    book = Path(book)
+    if not filenames:
+        raise ValueError('Yeniden cevrilecek bolum secilmedi.')
+    statuses = dict(rows(read(book / '00-CONTEXT.md')))
+    for filename in filenames:
+        _check_filename(filename)
+        if filename not in statuses:
+            raise ValueError('Dosya Files tablosunda yok: ' + filename)
+        if not (book / 'source' / filename).exists():
+            raise ValueError('Kaynak dosya yok: ' + filename)
+        if statuses[filename] not in ('done', 'next'):
+            raise ValueError(f'"{filename}" henuz cevrilmedi; sirasi geldiginde normal akista cevrilecek.')
+
+
+def _backup_path(work):
+    stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    candidate = work / f'recheck-prev-{stamp}.md'
+    index = 2
+    while candidate.exists():
+        candidate = work / f'recheck-prev-{stamp}-{index}.md'
+        index += 1
+    return candidate
+
+
+def reset_chapter(book, filename):
+    """Bir bolumu yeniden ceviriye hazirlar.
+
+    - `done` bolum: ceviri zaman damgali yedege tasinir, state silinir, notlari
+      00-CONTEXT'ten cikarilir, bolum `next` yapilir ve `recheck.json` yazilir.
+    - `next` bolum (yarim da olabilir): yalnizca checkpoint sifirlanir; baglam
+      degismez ve normal (recheck olmayan) referansla bastan cevrilir.
+    Yarim kalmis baska bolumlerin checkpointleri yeni baglama tasinir (G21)."""
+    book = Path(book)
+    validate_rerun(book, [filename])
+    context_path = book / '00-CONTEXT.md'
+    context = read(context_path)
+    status = dict(rows(context))[filename]
+    work = book / '_python_translation' / filename
+    work.mkdir(parents=True, exist_ok=True)
+    translation_path = book / 'translation' / filename
+    if translation_path.exists():
+        translation_path.replace(_backup_path(work))
+    state_path = work / 'state.json'
+    if state_path.exists():
+        state_path.unlink()
+    if status == 'next':
+        (work / 'recheck.json').unlink(missing_ok=True)
+        return
+    (work / 'recheck.json').write_text('{}', encoding='utf-8')
+    new_context = remove_translation_notes(context, filename)
+    lines = []
+    for line in new_context.splitlines():
+        match = re.match(r'^\|\s*`?([^|`]+\.md)`?\s*\|\s*(.*?)\s*\|\s*$', line)
+        if match:
+            name = match[1].strip()
+            if name == filename:
+                line = f'| `{name}` | next |'
+            elif match[2].strip() == 'next':
+                line = f'| `{name}` |  |'
+        if re.match(r'^- \*\*Last completed file:\*\*', line):
+            line = f'- **Last completed file:** {filename}'
+        lines.append(line)
+    new_context = re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip() + '\n'
+    book_state_path = book / '_python_translation' / 'book-state.json'
+    if book_state_path.exists():
+        book_state = json.loads(read(book_state_path))
+        names = compressed_note_names(book_state, note_sections(context))
+        if filename in names or 'compressed_notes' not in book_state:
+            names.discard(filename)
+            book_state['compressed_notes'] = sorted(names)
+            book_state.pop('summary_note_count', None)
+            save_json(book_state_path, book_state)
+    write_context(book, context, new_context, exclude=filename)
+
+
+def chapters_containing(book, terms, only_done=True):
+    """Kaynakta terimlerin tam kelime gectigi bolumler. Varsayilan olarak yalnizca
+    cevrilmis (`done`) bolumler doner; henuz cevrilmemis bolumler zaten guncel
+    sozlukle cevrilecegi icin yeniden ceviri listesine girmez (G21)."""
+    book = Path(book)
+    terms = [str(term).strip() for term in terms if str(term).strip()]
+    if not terms:
+        return []
+    patterns = [source_term_regex(term) for term in terms]
+    matched = []
+    for filename, status in rows(read(book / '00-CONTEXT.md')):
+        if only_done and status != 'done':
+            continue
+        path = book / 'source' / filename
+        if not path.exists():
+            continue
+        text = read(path)
+        if any(pattern.search(text) for pattern in patterns):
+            matched.append(filename)
+    return matched
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -581,7 +1132,8 @@ class Client:
                 text = fenced.group(1).strip()
         if not text or text.startswith('```'):
             raise ValueError('Bos veya kod blogu biciminde yanit; sonuc kaydedilmedi.')
-        if any(marker in text for marker in ('<|channel>', '<tool_call', '<|tool_call', '<think>', '</think>')):
+        if re.search(r'<\|channel>|<tool_call|<\|tool_call', text) or \
+                re.search(r'(?m)^[ \t]*(?:thinking|response)\b', text):
             raise ValueError('Yanit dusunce/tool isaretleri iceriyor; sonuc kaydedilmedi.')
         if text.count('\\n') > 3 and text.count('\n') < 2:
             raise ValueError('Gorunur newline kacislari tespit edildi; sonuc kaydedilmedi.')
@@ -594,6 +1146,47 @@ class TranslationEngine:
         self.controller = controller or PauseController()
         self.log = log or print
         self.progress = progress or (lambda **_values: None)
+        self.glossary_fixes = []  # G19/G25: uyulamayan glossary kayitlari
+        self._glossary_fixes_path = None
+
+    def _register_glossary_fix(self, source, translated_before, attempted_fix, missing_targets):
+        """Uyulamayan glossary duzeltmesini bellege ve glossary_fixes.log'a yazar.
+        Dosya her kayitta acilip kapanir; yarim kalan calismada tutamak sizmaz."""
+        self.glossary_fixes.append({
+            'source': source,
+            'translated_before': translated_before,
+            'attempted_fix': attempted_fix,
+            'missing_targets': missing_targets,
+        })
+        if self._glossary_fixes_path is None:
+            return
+        try:
+            with Path(self._glossary_fixes_path).open('a', encoding='utf-8', newline='\n') as stream:
+                stream.write('\n' + '=' * 70 + '\n')
+                stream.write(datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n')
+                stream.write('SOURCE:\n' + source + '\n')
+                stream.write('TRANSLATED BEFORE FIX:\n' + translated_before + '\n')
+                stream.write('ATTEMPTED FIX:\n' + attempted_fix + '\n')
+                stream.write('MISSING TARGETS: ' + ', '.join(missing_targets) + '\n')
+        except OSError:
+            pass
+
+    def _open_glossary_fix_log(self, book):
+        self._glossary_fixes_path = Path(book) / 'glossary_fixes.log'
+
+    def _close_glossary_fix_log(self):
+        self._glossary_fixes_path = None
+
+    def _generate_retry(self, client, system, user, max_tokens, label, **kwargs):
+        """G27: notlar ve sikistirma icin gecici hatalarda otomatik yeniden deneme."""
+        for attempt in range(TRANSLATION_AUTO_RETRIES + 1):
+            try:
+                return self._generate(client, system, user, max_tokens, **kwargs)
+            except (ValueError, RuntimeError) as error:
+                if not retryable_translation_error(error) or attempt >= TRANSLATION_AUTO_RETRIES:
+                    raise
+                self.log(f'{label} yaniti alinamadi: {error} Otomatik yeniden deneme {attempt + 1}/{TRANSLATION_AUTO_RETRIES}...')
+                self.controller.checkpoint()
 
     def _budget_check(self, cfg, client, system, user, max_tokens):
         if not cfg.get('token_estimation_enabled', True):
@@ -610,24 +1203,42 @@ class TranslationEngine:
         return client.generate(system, user, max_tokens, require_marker=require_marker, allow_json_fence=allow_json_fence)
 
     def _enforce_glossary(self, client, source, translated, glossary, max_tokens):
-        missing = [item for item in glossary if re.search(re.escape(item['source']), source, re.I) and not re.search(re.escape(item['target']), translated, re.I)]
+        # Kaynak: tam kelime (G17). Hedef: Turkce cekim/ses olayi toleransli (G24).
+        def missing_in(text, items):
+            return [item for item in items if not _target_search(item['target'], text)]
+
+        present = [item for item in glossary if source_term_regex(item['source']).search(source)]
+        missing = missing_in(translated, present)
         if not missing:
             return translated
         self.log('Glossary denetimi: eksik terimler duzeltiliyor: ' + ', '.join(item['source'] for item in missing))
         system = 'Return only the corrected Turkish translation. Preserve every sentence and Markdown. Change only terminology needed to obey the mandatory glossary.'
         user = f'MANDATORY GLOSSARY:\n{glossary_text(missing)}\n\nSOURCE:\n{source}\n\nTRANSLATION TO CORRECT:\n{translated}'
-        fixed = self._generate(client, system, user, max_tokens)
-        still_missing = [item['target'] for item in missing if not re.search(re.escape(item['target']), fixed, re.I)]
-        if still_missing:
-            raise ValueError('Glossary zorunlulugu saglanamadi: ' + ', '.join(still_missing))
-        return fixed
+        fixed = self._generate(
+            client, system, user, max_tokens,
+            # Denetim tamamen kapatildiysa glossary duzeltmesi de yapay marker
+            # yuzunden takilmaz. Denetim acikken duzeltme yaniti katidir.
+            require_marker=bool(client.cfg.get('completion_marker_enabled', True)),
+        )
+        still_missing_items = missing_in(fixed, missing)
+        if not still_missing_items:
+            return fixed
+        still_missing = [item['target'] for item in still_missing_items]
+        self._register_glossary_fix(source, translated, fixed, still_missing)
+        if client.cfg.get('glossary_strict', False):
+            raise ValueError('Glossary zorunlulugu saglanamadi: ' + ', '.join(still_missing) +
+                             ' (detay icin proje klasorundeki glossary_fixes.log dosyasina bakin)')
+        # G25: gozetimsiz calismada tek terim yuzunden kitap durmaz. Duzeltme
+        # ciktisi glossary'ye daha fazla uyuyorsa o, degilse ilk ceviri kullanilir.
+        chosen = fixed if len(still_missing_items) < len(missing) else translated
+        self.log('UYARI: Glossary karsiligi uygulanamadi, ceviri devam ediyor: ' + ', '.join(still_missing) +
+                 ' (glossary_fixes.log dosyasina yazildi)')
+        return chosen
 
     def run_analysis(self, book, filenames=None):
         """Optionally analyze every source chunk, checkpointing each API response."""
         book = Path(book)
-        lock = book / '_python_analysis.lock'
-        descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY); os.close(descriptor)
-        try:
+        with FileLock(book / '_python_analysis.lock'):
             cfg = dict(self.config_provider()); validate_config(cfg)
             client = Client(cfg, self.log)
             analysis_dir = book / '_python_analysis'; analysis_dir.mkdir(parents=True, exist_ok=True)
@@ -651,7 +1262,12 @@ class TranslationEngine:
                 source = read(book / 'source' / filename); chunks = split_source(source, int(cfg['chunk_chars']))
                 state_path = analysis_dir / (filename + '.v2.state.json')
                 existing = json.loads(read(state_path)) if state_path.exists() else None
-                signature = digest(source + '\0' + ANALYSIS_PROMPT + '\0' + json.dumps(cfg, sort_keys=True, ensure_ascii=False))
+                # Imza yalnızca analiz sonucunu gerçekten değiştirebilecek değerleri kapsar.
+                # temperature, model, max_tokens, timeout, base_url gibi çeviri kararlılığı
+                # dışı ayarlar değişirse mevcut analiz checkpointleri geçersiz olmaz.
+                signature = digest(source + '\0' + ANALYSIS_PROMPT + '\0' + json.dumps(
+                    {key: cfg[key] for key in ('notes_max_tokens', 'chunk_chars') if key in cfg},
+                    sort_keys=True, ensure_ascii=False))
                 state = existing or {'analysis_version': ANALYSIS_VERSION, 'signature': signature, 'effective_config': cfg, 'parts': [], 'complete': False}
                 if state.get('signature') != signature:
                     raise ValueError(f'{filename} için kaynak veya analiz ayarları değişmiş; ön analiz checkpointi korundu.')
@@ -664,9 +1280,16 @@ class TranslationEngine:
                     # A complete, schema-valid JSON object is the completion signal here.
                     # Some models omit artificial trailing markers even after returning
                     # valid JSON; normal translation output keeps the stricter marker.
+                    retry_reason = None  # 'schema' | 'connection' - son retry'in sebebi
                     for attempt in range(ANALYSIS_AUTO_RETRIES + 1):
-                        retry_notice = ('' if attempt == 0 else
-                            '\n\nRETRY NOTICE: The previous response failed validation. Return one complete JSON object with every required field and no commentary.')
+                        if retry_reason == 'schema':
+                            retry_notice = ('\n\nRETRY NOTICE: The previous response failed validation. '
+                                            'Return one complete JSON object with every required field and no commentary.')
+                        elif retry_reason == 'connection':
+                            retry_notice = ('\n\nRETRY NOTICE: The previous request failed because of a temporary '
+                                            'CONNECTION problem. Please retry and return one complete JSON object with every required field and no commentary.')
+                        else:
+                            retry_notice = ''
                         try:
                             result = parse_analysis(self._generate(
                                 client, ANALYSIS_PROMPT, user + retry_notice, int(cfg['notes_max_tokens']),
@@ -677,8 +1300,18 @@ class TranslationEngine:
                             retryable = str(error).startswith(ANALYSIS_RESPONSE_ERROR_PREFIXES)
                             if not retryable or attempt >= ANALYSIS_AUTO_RETRIES:
                                 raise
+                            retry_reason = 'schema'
                             self.log(
                                 f'On analiz yaniti dogrulanamadi: {error} '
+                                f'Otomatik yeniden deneme {attempt + 1}/{ANALYSIS_AUTO_RETRIES}...'
+                            )
+                            self.controller.checkpoint()
+                        except RuntimeError as error:
+                            if not retryable_translation_error(error) or attempt >= ANALYSIS_AUTO_RETRIES:
+                                raise
+                            retry_reason = 'connection'
+                            self.log(
+                                f'On analiz baglanti hatasi: {error} '
                                 f'Otomatik yeniden deneme {attempt + 1}/{ANALYSIS_AUTO_RETRIES}...'
                             )
                             self.controller.checkpoint()
@@ -692,19 +1325,54 @@ class TranslationEngine:
                 save_json(analysis_dir / (filename + '.v2.analysis.json'), chapter)
             write_analysis_outputs(book, selected)
             self.log('On analiz tamamlandi ve BOOK-ANALYSIS.md kaydedildi.')
-        finally:
-            lock.unlink(missing_ok=True)
+
+    def _merge_analysis_terms_into_glossary(self, book):
+        """On analizden cikan terim onerilerini (kitap geneli + bolum) mevcut
+        glossary.json ile birlestirir ve temizler.
+
+        Kapsam: G16. Analiz onerileri kaynak terimi ilk karşiligiyla ekler;
+        kullanici tarafindan onceden kararlanmis/anlasilmis kayitlar korunur.
+        YalnizCA YENI kaynak terimler eklenir; ayni source yeni bir karşilik
+        ile gelirse duplicate olusturmaz (ilk kayit kazanir).
+
+        CLI akisinda (cevir.py review_analysis_terms) kullanici onayi sonrasi
+        cagrilir; GUI akisinda kullanici onay dialogu dogrudan save_json ile
+        yazar, bu metod GUI'de kullanilmaz (docstring'teki eski ``merge'' notu
+        gecersizdir). run_analysis bu metodu cagirmaz; onay mekanizmasi onceden
+        olmadan glossary'ye dokunulmaz.
+        """
+        book = Path(book)
+        glossary_path = book / 'glossary.json'
+        existing = load_glossary(book)
+        merged, seen = [], set()
+        for item in existing:
+            merged.append(item)
+            seen.add(item['source'].casefold())
+        for item in analysis_terms(book):
+            if item.get('scope', 'book') != 'book':
+                continue  # G26: bolum ozel oneriler kitap geneli zorunlu sozluge otomatik girmez
+            source = str(item.get('source', '')).strip()
+            target = str(item.get('suggested_target', '') or '').strip()
+            if not source or not target or source.casefold() in seen:
+                continue
+            seen.add(source.casefold())
+            merged.append({'source': source, 'target': target})
+        if merged != existing:
+            save_json(glossary_path, merged)
+            self.log('On analiz terim onerileri glossary.json ile birlestirildi (duplicate onlendi).')
+        else:
+            self.log('On analiz terim onerileri glossary.json ile ayni; birlestirme yapilmadi.')
 
     def run_file(self, book, filename=None):
         book = Path(book)
         context_path = book / '00-CONTEXT.md'
         context = read(context_path)
+        self._open_glossary_fix_log(book)  # G19: başarısız düzeltmeler bu dosyaya yazılır
         selected = [name for name, status in rows(context) if status == 'next'] if filename is None else [filename]
         if len(selected) != 1:
             raise ValueError('Files tablosunda tam bir next dosyasi bulunmali.')
         filename = selected[0]
-        if Path(filename).name != filename or any(char in filename for char in ('/', '\\', ':')):
-            raise ValueError('Dosya adi calisma klasoru disina cikamaz.')
+        _check_filename(filename)
         source = read(book / 'source' / filename)
         if not source.strip():
             raise ValueError('Kaynak bos.')
@@ -712,8 +1380,31 @@ class TranslationEngine:
         work.mkdir(parents=True, exist_ok=True)
         state_path = work / 'state.json'
         existing = json.loads(read(state_path)) if state_path.exists() else None
-        cfg = dict(existing.get('effective_config', {})) if existing and existing.get('effective_config') else dict(self.config_provider())
-        validate_config(cfg)
+        recheck = (work / 'recheck.json').exists()
+        live_cfg = dict(self.config_provider())
+        validate_config(live_cfg)
+        cfg = None
+        if existing and 'effective_config' in existing:
+            try:
+                cfg = dict(existing['effective_config'])
+                # G38 oncesi checkpointlerde bu iki alan yoktur. Yalnizca yeni
+                # alanlari geriye uyumlu doldur; diger eksik checkpoint alanlari
+                # hata olmaya devam etsin.
+                for key in LIVE_MARKER_CONFIG_KEYS:
+                    cfg.setdefault(key, DEFAULT_CONFIG[key])
+                validate_config(cfg)  # eksik/yanlis tip alan -> KeyError/TypeError
+            except (KeyError, TypeError):
+                raise ValueError(
+                    'Checkpoint ayarlari bozuk veya eksik; klasoru koruyup '
+                    'state.json dosyasindaki effective_config alanini duzeltin.'
+                ) from None
+        if cfg is None:
+            cfg = live_cfg
+        elif any(cfg[key] != live_cfg[key] for key in LIVE_MARKER_CONFIG_KEYS):
+            for key in LIVE_MARKER_CONFIG_KEYS:
+                cfg[key] = live_cfg[key]
+            validate_config(cfg)
+            self.log('Bitis isareti ayarlari mevcut yarim bolum icin guncellendi.')
         client = Client(cfg, self.log)
         glossary = existing.get('glossary', []) if existing and 'glossary' in existing else load_glossary(book)
         chunks = split_source(source, int(cfg['chunk_chars']))
@@ -728,7 +1419,11 @@ class TranslationEngine:
             save_json(state_path, existing)
             self.log('Eski checkpoint yeni motora kayipsiz aktarildi.')
         state = existing or {'signature': signature, 'effective_config': cfg, 'glossary': glossary, 'context_before': context,
-                             'reference': book_data(book, context, filename), 'parts': [], 'notes': None}
+                             'reference': book_data(book, context, filename, recheck=recheck), 'parts': [], 'notes': None}
+        if existing:
+            state.setdefault('effective_config', {}).update({key: cfg[key] for key in LIVE_MARKER_CONFIG_KEYS})
+        if recheck and not existing:
+            (work / 'recheck.json').unlink(missing_ok=True)
         if state['signature'] != signature:
             raise ValueError('Kaynak/prompt/glossary degismis. Tamamlanmamis bolumun is klasorunu arsivleyin.')
         if state.get('complete'):
@@ -737,6 +1432,13 @@ class TranslationEngine:
             raise ValueError('Baglam dosyasi is basladiktan sonra degismis; checkpoint korundu.')
         if 'reference' not in state:
             state['reference'] = book_data(book, state['context_before'], filename)
+        if image_only_source(source) and not state['parts'] and state['notes'] is None:
+            # Kapak, harita ve benzeri yalnizca gorsel tasiyan parcalari modele
+            # gondermek hem token harcar hem de epub-resource hedefini bozabilir.
+            chunks = [source]
+            state['parts'] = [source.rstrip('\n')]
+            state['notes'] = '- Bu bölüm yalnızca görsel içerik taşıdığı için modele gönderilmeden korundu.'
+            self.log(f'Yalnizca gorsel bolum modele gonderilmeden korundu: {filename}')
         save_json(state_path, state)
         reference = state['reference']
         system = read(prompt_path())
@@ -746,14 +1448,26 @@ class TranslationEngine:
             self.log(f'Ceviri {index + 1}/{len(chunks)} — yanit bekleniyor...')
             previous = state['parts'][-1][-1800:] if state['parts'] else '(Yok)'
             user = f'BOOK REFERENCE DATA:\n{reference}\n\nMANDATORY USER GLOSSARY:\n{glossary_text(glossary)}\n\nPREVIOUS TRANSLATION END:\n{previous}\n\nSOURCE TO TRANSLATE — PART {index + 1}/{len(chunks)}:\n{chunks[index]}'
+            require_marker = translation_requires_completion_marker(chunks[index], cfg)
+            if not require_marker:
+                if cfg['completion_marker_enabled']:
+                    reason = f'isaretsiz kabul siniri={cfg["completion_marker_exempt_chars"]}'
+                else:
+                    reason = 'bitis isareti denetimi kapali'
+                self.log(f'Parca {len(chunks[index].strip())} karakter ({reason}): '
+                         'cikti ve EPUB yapi denetimleri kullaniliyor.')
             for attempt in range(TRANSLATION_AUTO_RETRIES + 1):
                 retry_system = (system if attempt == 0 else system +
                     '\nA previous response for this same source fragment failed validation. '
                     'Translate the complete fragment again from the beginning and obey every output and glossary rule.')
                 try:
-                    translated = self._generate(client, retry_system, user, int(cfg['max_tokens']))
+                    translated = self._generate(
+                        client, retry_system, user, int(cfg['max_tokens']),
+                        require_marker=require_marker,
+                    )
                     translated = self._enforce_glossary(
                         client, chunks[index], translated, glossary, int(cfg['max_tokens']))
+                    validate_translation_structure(chunks[index], translated)
                     break
                 except (ValueError, RuntimeError) as error:
                     if not retryable_translation_error(error) or attempt >= TRANSLATION_AUTO_RETRIES:
@@ -769,17 +1483,19 @@ class TranslationEngine:
             self.log(f'Parca {index + 1} kaydedildi.')
             self.controller.checkpoint()
         translation = '\n\n'.join(state['parts']) + '\n'
+        validate_translation_structure(source, translation)
         atomic(work / 'translation-draft.md', translation)
         if state['notes'] is None:
             notes_parts = state.setdefault('notes_parts', [])
             for index in range(len(notes_parts), len(chunks)):
                 self.controller.checkpoint()
                 self.progress(filename=filename, part=index + 1, parts=len(chunks), phase='notes')
-                note = self._generate(
+                note = self._generate_retry(
                     client,
                     'Return only concise Turkish Markdown continuity notes: new glossary pairs, address-form decisions, names, and a two-sentence plot summary. Preserve existing decisions. Do not invent facts.',
                     f'EXISTING REFERENCE:\n{reference}\n\nSOURCE:\n{chunks[index]}\n\nTRANSLATION:\n{state["parts"][index]}',
                     int(cfg['notes_max_tokens']),
+                    'Bolum notu',
                     require_marker=False,
                 )
                 notes_parts.append(note)
@@ -798,44 +1514,135 @@ class TranslationEngine:
             atomic(destination, translation)
         if read(context_path) == state['context_before']:
             atomic(work / '00-CONTEXT-before.md', state['context_before'])
-            atomic(context_path, state['context_after'])
+            write_context(book, state['context_before'], state['context_after'], exclude=filename)
         elif read(context_path) != state['context_after']:
             raise ValueError('Baglam eszamanli degisti; ceviri kayitli, baglam guncellenmedi.')
         state['complete'] = True
         save_json(state_path, state)
         self.log(f'Kaydedildi: {destination}')
         self.progress(filename=filename, part=1, parts=1, phase='chapter_complete')
+        self._close_glossary_fix_log()
+
+    def _reference_over_budget(self, book, client, context):
+        """G22: bir sonraki bolumun referansi context butcesini zorluyor mu?"""
+        pending = [name for name, status in rows(context) if status == 'next']
+        try:
+            context_tokens, _source = client.context_length()
+        except Exception:
+            context_tokens = int(client.cfg.get('fallback_context_length', 32768))
+        estimate = len(book_data(book, context, pending[0] if pending else None)) // 3
+        limit = int(context_tokens * REFERENCE_BUDGET_RATIO)
+        if estimate > limit:
+            self.log(f'Baglam referansi buyudu (≈{estimate} token > {limit}); notlar sikistiriliyor.')
+            return True
+        return False
+
+    def _note_batches(self, client, sections, fixed_chars):
+        """Sikistirma istegi de context'e sigsin diye notlari parti parti boler."""
+        try:
+            context_tokens, _source = client.context_length()
+        except Exception:
+            context_tokens = int(client.cfg.get('fallback_context_length', 32768))
+        budget = (context_tokens - int(client.cfg['notes_max_tokens']) -
+                  int(client.cfg.get('context_safety_tokens', 2048))) * 3 - fixed_chars - 2000
+        budget = max(budget, 2000)
+        batches, current, size = [], [], 0
+        for name, notes in sections:
+            if len(notes) > budget:
+                self.log(f'UYARI: {name} notlari tek istege sigmiyor; sikistirma icin kirpildi.')
+                notes = notes[:budget]
+            if current and size + len(notes) > budget:
+                batches.append(current); current, size = [], 0
+            current.append((name, notes)); size += len(notes) + 50
+        if current:
+            batches.append(current)
+        return batches
 
     def _compress_if_needed(self, book, client):
-        context = read(Path(book) / '00-CONTEXT.md')
+        book = Path(book)
+        context = read(book / '00-CONTEXT.md')
         table = rows(context)
-        completed = sum(status == 'done' for _, status in table)
         if not table:
             return
+        completed = sum(status == 'done' for _, status in table)
         percentage = completed * 100 / len(table)
-        book_state_path = Path(book) / '_python_translation' / 'book-state.json'
-        state = json.loads(read(book_state_path)) if book_state_path.exists() else {'compressed_at': []}
-        pending = [value for value in (25, 50, 75) if percentage >= value and value not in state['compressed_at']]
+        book_state_path = book / '_python_translation' / 'book-state.json'
+        state = load_book_state(book)
+        state.setdefault('compressed_at', [])
         sections = note_sections(context)
-        prior = Path(book) / '_python_translation' / 'continuity-summary.md'
-        for threshold in pending:
-            prior_text = read(prior) if prior.exists() else '(Yok)'
-            new_notes = '\n\n'.join(notes for _, notes in sections[int(state.get('summary_note_count', 0)):]) or '(Yeni not yok.)'
-            user = f'PREVIOUS COMPRESSED SUMMARY:\n{prior_text}\n\nNEW NOTES:\n{new_notes}'
-            summary = self._generate(client, 'Compress only plot/continuity summaries into concise Turkish Markdown. Do not output or alter glossary, proper nouns, address forms, or style decisions.', user, int(client.cfg['notes_max_tokens']), require_marker=False)
-            atomic(prior, summary + '\n')
-            state['compressed_at'].append(threshold)
-            state['summary_note_count'] = len(sections)
+        compressed = compressed_note_names(state, sections)
+        if 'compressed_notes' not in state:
+            state['compressed_notes'] = sorted(compressed)
+            state.pop('summary_note_count', None)
+        pending_thresholds = [value for value in (25, 50, 75) if percentage >= value and value not in state['compressed_at']]
+        pending_notes = [item for item in sections if item[0] not in compressed]
+        if not pending_thresholds and not (pending_notes and self._reference_over_budget(book, client, context)):
+            return
+        summary_path = book / '_python_translation' / 'continuity-summary.md'
+        decisions_path = book / '_python_translation' / 'continuity-decisions.md'
+        prior_text = read(summary_path) if summary_path.exists() else '(Yok)'
+        decisions_text = read(decisions_path) if decisions_path.exists() else '(Yok)'
+        for batch in self._note_batches(client, pending_notes, max(len(prior_text), len(decisions_text))):
+            names = [name for name, _notes in batch]
+            new_notes = '\n\n'.join(f'### {name}\n{notes}' for name, notes in batch)
+            if state.get('decisions_batch') != names:
+                # G23: once kalici kararlar ayiklanir, sonra olay ozeti sikistirilir.
+                decisions_text = self._generate_retry(
+                    client, DECISIONS_PROMPT, f'EXISTING DECISIONS:\n{decisions_text}\n\nNEW NOTES:\n{new_notes}',
+                    int(client.cfg['notes_max_tokens']), 'Karar listesi', require_marker=False)
+                atomic(decisions_path, decisions_text.strip() + '\n')
+                state['decisions_batch'] = names
+                save_json(book_state_path, state)
+            self.controller.checkpoint()
+            prior_text = self._generate_retry(
+                client, COMPRESS_PROMPT, f'PREVIOUS COMPRESSED SUMMARY:\n{prior_text}\n\nNEW NOTES:\n{new_notes}',
+                int(client.cfg['notes_max_tokens']), 'Baglam ozeti', require_marker=False)
+            atomic(summary_path, prior_text.strip() + '\n')
+            state['compressed_notes'] = sorted(set(state['compressed_notes']) | set(names))
+            state.pop('decisions_batch', None)
             save_json(book_state_path, state)
-            self.log(f'Baglam ozeti %{threshold} asamasinda sikistirildi.')
+            self.log('Baglam notlari sikistirildi: ' + ', '.join(names))
+            self.controller.checkpoint()
+        if pending_thresholds:
+            state['compressed_at'].extend(pending_thresholds)
+            self.log('Baglam ozeti esikleri islendi: ' + ', '.join(f'%{value}' for value in pending_thresholds))
+        save_json(book_state_path, state)
+
+    def rerun_chapters(self, book, filenames):
+        """Verilen bolumleri guvenli yeniden cevirir (G14/G15/G21). Once tum secim
+        dogrulanir; sonra her biri sifirlanip tek dosya olarak islenir. Bitince
+        TAM-CEVIRI.md ve (kitap tamamsa) EPUB yeniden uretilir."""
+        book = Path(book)
+        filenames = [str(name) for name in filenames]
+        with FileLock(book / '_python_translation.lock'):
+            validate_rerun(book, filenames)
+            for filename in filenames:
+                reset_chapter(book, filename)
+                self.run_file(book, filename)
+                self.controller.checkpoint()
+            self._finalize_outputs(book, build_epub=True, require_complete=True)
+
+    def _finalize_outputs(self, book, build_epub=True, require_complete=False):
+        book = Path(book)
+        table = rows(read(book / '00-CONTEXT.md'))
+        completed = [read(book / 'translation' / name) for name, status in table if status == 'done']
+        atomic(book / 'TAM-CEVIRI.md', '\n\n'.join(completed))
+        if not build_epub or not (book / 'epub-import.json').exists():
+            return
+        if require_complete and any(status != 'done' for _name, status in table):
+            self.log('TAM-CEVIRI.md guncellendi; EPUB kitap tamamlaninca uretilecek.')
+            return
+        from epub_output import build_translated_epub
+        output = build_translated_epub(book, self.log, validation_config=dict(self.config_provider()))
+        self.log('EPUB olusturuldu: ' + str(output))
 
     def run_book(self, book, single_file=None, build_epub=True):
         book = Path(book)
-        lock = book / '_python_translation.lock'
-        lock.parent.mkdir(parents=True, exist_ok=True)
-        descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.close(descriptor)
-        try:
+        with FileLock(book / '_python_translation.lock'):
+            context = read(book / '00-CONTEXT.md')
+            max_iterations = len(rows(context)) * 2 + 1
+            previous_file = None
+            iterations = 0
             while True:
                 context = read(book / '00-CONTEXT.md')
                 pending = [name for name, status in rows(context) if status == 'next']
@@ -843,18 +1650,29 @@ class TranslationEngine:
                     pending = [single_file]
                 if not pending:
                     break
+                if pending[0] == previous_file:
+                    raise RuntimeError(
+                        'Ilerleme yok: "' + pending[0] + '" tamamlanmasina ragmen hala siradaki dosya. '
+                        '00-CONTEXT.md dosyasindaki durumlari ve checkpointleri kontrol edin; kayitlar korundu.'
+                    )
+                previous_file = pending[0]
                 self.run_file(book, pending[0])
                 self.controller.checkpoint()
-                cfg = dict(self.config_provider())
+                # Sikistirma, cevirisi devam eden bolumun kendi config anlik
+                # goruntusuyle gider; arada config.json/model degisirse ozet
+                # modeli ile ceviri modeli farklilasmaz.
+                state_path = book / '_python_translation' / pending[0] / 'state.json'
+                cfg = dict(json.loads(read(state_path)).get('effective_config') or self.config_provider())
+                validate_config(cfg)
                 self._compress_if_needed(book, Client(cfg, self.log))
+                iterations += 1
+                if iterations > max_iterations:
+                    raise RuntimeError(
+                        'Guvenlik siniri asildi: ceviri dongusu ilerlemiyor. '
+                        '00-CONTEXT.md dosyasindaki durumlari ve checkpointleri kontrol edin; kayitlar korundu.'
+                    )
                 if single_file:
                     break
-            completed = [read(book / 'translation' / name) for name, status in rows(read(book / '00-CONTEXT.md')) if status == 'done']
-            atomic(book / 'TAM-CEVIRI.md', '\n\n'.join(completed))
-            if build_epub and (book / 'epub-import.json').exists() and not single_file:
-                from epub_output import build_translated_epub
-                output = build_translated_epub(book, self.log)
-                self.log('EPUB olusturuldu: ' + str(output))
+            self._finalize_outputs(book, build_epub=build_epub and not single_file)
             self.progress(phase='complete')
-        finally:
-            lock.unlink(missing_ok=True)
+            self._close_glossary_fix_log()
