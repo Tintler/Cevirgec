@@ -349,32 +349,6 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 
 Daha ayrıntılı kullanım notları için [KULLANIM.md](KULLANIM.md) dosyasına bakın.
 
-## GitHub'a yükleme
-
-Kaynak kodu GitHub'a göndermeden önce `.gitignore` dosyasını koruyun. Bu dosya üretilmiş `.exe`, çalışma klasörleri, EPUB kitapları, loglar, sanal ortamlar ve Python önbelleklerinin yanlışlıkla depoya eklenmesini engeller.
-
-GitHub'da boş bir `Cevirgec` deposu oluşturun. Mevcut yerel proje gönderileceği için oluşturma ekranında README, `.gitignore` ve lisans ekleme seçeneklerini işaretlememek en kolay yoldur. Ardından proje klasöründe:
-
-```bat
-git init
-git add .
-git status
-git commit -m "İlk Çevirgeç sürümü"
-git branch -M main
-git remote add origin https://github.com/KULLANICI_ADIN/Cevirgec.git
-git push -u origin main
-```
-
-`KULLANICI_ADIN` bölümünü GitHub kullanıcı adınızla değiştirin. Sonraki güncellemelerde:
-
-```bat
-git add .
-git commit -m "Değişiklikleri açıkla"
-git push
-```
-
-Kullanıcıların hazır uygulamayı indirebilmesi için `dist` klasörünü kaynak depoya commit etmeyin. Bunun yerine `Cevirgec.exe`, `config.json` ve `translation_prompt.txt` dosyalarını birlikte ZIP'leyin; GitHub'da **Releases → Draft a new release** üzerinden örneğin `v1.0.0` etiketiyle bu ZIP'i sürüm varlığı olarak ekleyin. İlk commit'ten önce `LICENSE` dosyasındaki telif satırını kendi adınızla güncellemek isterseniz `LICENSE`'in ilk satırını düzenleyin.
-
 ## Lisans
 
 MIT
