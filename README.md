@@ -337,7 +337,7 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 | Model görünmüyor | LM Studio sunucusunun açık ve modelin gerçekten yüklü olduğunu doğrulayın; **Yenile**'ye basın |
 | Bağlantı reddedildi | Base URL'yi ve LM Studio portunu kontrol edin |
 | Context yetersiz | Parça boyutunu veya çıktı token payını azaltın; doğru yüklü modelin seçildiğini doğrulayın |
-| Yanıt tamamlanmadı | Otomatik denemeleri bekleyin; sürerse **İşaretsiz sınır** değerini yükseltin veya **Bitiş işareti denetimi**ni kapatın. Denetimi kapatmak eksik metin riskini artırır; boş/bozuk çıktı, token sınırı ve EPUB yapısı yine denetlenir |
+| Yanıt tamamlanmadı | Otomatik denemeleri bekleyin; sürerse **İşaretsiz sınır** değerini yükseltin veya **Bitiş işareti denetimi**ni kapatın. Denetimi kapatmak eksik metin riskini artırır; boş/bozuk çıktı, token sınırı ve EPUB yapısı yine denetlenir.3000 kolaylık açısından iyi bir rakam tek seferde 2200 dönüştürüyor, bazı kitaplarda noktalama işareti olmuyor mesela "The End of Part 1" düz bitiyor ve soruna neden oluyor. ama 2200 karakterlik için 1000 karakterlik çevirme yaptıysa yakalayamaz sistem |
 | Ön analiz JSON hatası | Ayarlanan otomatik tekrarlar tamamlandıktan sonra sürüyorsa modeli/temperature değerini kontrol edin |
 | Sözlük karşılığı eksik | `glossary_fixes.log` dosyasındaki parçaları kontrol edin; terim Türkçe çekimli (kitabı, ağacın, Işıkları) geçiyorsa kabul edilir, farklı sözcük seçilmişse o bölümü sağ tıkla yeniden çevirin veya daha güçlü model deneyin |
 | Proje uyuşmazlığı | Kaynak, prompt, sözlük veya checkpoint dosyalarını çalışma sırasında elle değiştirmeyin |
