@@ -231,11 +231,9 @@ class AnalysisSelectionDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, config, loaded_models=None, parent=None):
+    def __init__(self, config, loaded_models=None, parent=None, locked=False):
         super().__init__(parent); self.setWindowTitle('Ayarlar'); self.resize(520, 0)
         outer = QVBoxLayout(self)
-        warning = QLabel('Bu ayarlar deneyseldir ve çeviri kararlılığını etkiler. Ne yaptığınızdan emin değilseniz değiştirmeyin.')
-        warning.setObjectName('settingsWarning'); warning.setWordWrap(True); outer.addWidget(warning)
         layout = QFormLayout(); outer.addLayout(layout); self.fields = {}
 
         book_section = QLabel('Kitap ve EPUB'); book_section.setObjectName('settingsSection'); layout.addRow(book_section)
@@ -287,9 +285,8 @@ class SettingsDialog(QDialog):
         model.setCurrentIndex(configured_index if configured_index >= 0 else 0)
         model.setToolTip('LM Studio tarafından yüklü bildirilen modeller arasından seçim yapılır.')
         self.fields['model'] = model; layout.addRow('Model', model)
-        model_note = QLabel('LM Studio yüklü model listesi kullanılıyor.' if self.loaded_models else
-                            'Yüklü model listesi alınamadı; mevcut ve varsayılan model gösteriliyor.')
-        model_note.setWordWrap(True); layout.addRow('', model_note)
+        warning = QLabel('Bu ayarlar deneyseldir ve çeviri kararlılığını etkiler. Ne yaptığınızdan emin değilseniz değiştirmeyin.')
+        warning.setObjectName('settingsWarning'); warning.setWordWrap(True); layout.addRow(warning)
         temperature = QDoubleSpinBox(); temperature.setRange(0, 2); temperature.setSingleStep(.05); temperature.setValue(float(config['temperature']))
         self.fields['temperature'] = temperature; layout.addRow('Temperature', temperature)
         for key, title, maximum in (
@@ -304,6 +301,13 @@ class SettingsDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         bottom = QHBoxLayout(); bottom.addWidget(restore); bottom.addStretch(); bottom.addWidget(buttons); outer.addLayout(bottom)
+        # G43: ceviri surerken LM Studio/model alanlari degistirilemez.
+        if locked:
+            for key in ('base_url', 'model', 'temperature', 'timeout_seconds', 'chunk_chars',
+                        'max_tokens', 'notes_max_tokens', 'fallback_context_length',
+                        'context_safety_tokens', 'token_estimation_enabled'):
+                self.fields[key].setEnabled(False)
+            restore.setEnabled(False)
 
     def reset_defaults(self):
         for key, field in self.fields.items():
@@ -426,9 +430,20 @@ class MainWindow(QMainWindow):
         self.analysis_preview = QPlainTextEdit(); self.analysis_preview.setReadOnly(True)
         self.analysis_preview.setPlainText('Ön analiz seçilirse sonuç burada gösterilir.')
         self.tabs.addTab(self.analysis_preview, 'Ön Analiz')
-        preview = QSplitter(Qt.Horizontal); self.source_preview = QPlainTextEdit(); self.translation_preview = QPlainTextEdit()
-        self.source_preview.setReadOnly(True); self.translation_preview.setReadOnly(True)
-        preview.addWidget(self.source_preview); preview.addWidget(self.translation_preview); self.tabs.addTab(preview, 'Kaynak / Türkçe')
+        preview = QSplitter(Qt.Horizontal)
+        self.source_preview = QPlainTextEdit(); self.source_preview.setReadOnly(True)
+        self.translation_preview = QPlainTextEdit(); self.translation_preview.setReadOnly(True)
+        self.source_count = QLabel('0 karakter'); self.source_count.setAlignment(Qt.AlignRight)
+        self.translation_count = QLabel('0 karakter'); self.translation_count.setAlignment(Qt.AlignRight)
+        for count_label in (self.source_count, self.translation_count):
+            count_label.setStyleSheet('color:#7f8ca3; padding:2px 6px;')
+        source_panel = QWidget(); source_panel.setLayout(QVBoxLayout())
+        source_panel.layout().setContentsMargins(0, 0, 0, 0)
+        source_panel.layout().addWidget(self.source_preview, 1); source_panel.layout().addWidget(self.source_count)
+        translation_panel = QWidget(); translation_panel.setLayout(QVBoxLayout())
+        translation_panel.layout().setContentsMargins(0, 0, 0, 0)
+        translation_panel.layout().addWidget(self.translation_preview, 1); translation_panel.layout().addWidget(self.translation_count)
+        preview.addWidget(source_panel); preview.addWidget(translation_panel); self.tabs.addTab(preview, 'Kaynak / Türkçe')
         bottom = QHBoxLayout(); self.last_saved = QLabel('Son kayıt: —'); bottom.addWidget(self.last_saved); bottom.addStretch()
         self.pre_analysis = QCheckBox('Ön analiz yap (isteğe bağlı)')
         self.pre_analysis.setChecked(False)
@@ -443,6 +458,7 @@ class MainWindow(QMainWindow):
         if self.book is None: return
         self.book = None; self.tree.clear(); self.tree_items = {}
         self.source_preview.clear(); self.translation_preview.clear()
+        self.source_count.setText('0 karakter'); self.translation_count.setText('0 karakter')
         self.refresh_analysis_preview(); self.phase.setText('Başlatılmadı'); self.current.setText('Bölüm seçilmedi')
         self.set_progress_value(0)
 
@@ -477,7 +493,8 @@ class MainWindow(QMainWindow):
         self.populate_tree(); self.refresh_analysis_preview(); self.phase.setText('Mevcut proje hazır')
 
     def show_settings(self):
-        dialog = SettingsDialog(load_config(), self.loaded_models, self)
+        dialog = SettingsDialog(load_config(), self.loaded_models, self,
+                                locked=self.runtime_state in ('running', 'pausing', 'closing'))
         if dialog.exec() != QDialog.Accepted: return
         try:
             from app_core import validate_config
@@ -597,9 +614,13 @@ class MainWindow(QMainWindow):
         if not selected or not self.book: return
         filename = selected[0].data(0, Qt.UserRole)
         if not filename: return
-        self.source_preview.setPlainText(read(self.book / 'source' / filename))
+        source_text = read(self.book / 'source' / filename)
+        self.source_preview.setPlainText(source_text)
         target = self.book / 'translation' / filename
-        self.translation_preview.setPlainText(read(target) if target.exists() else 'Henüz çevrilmedi.')
+        translated_text = read(target) if target.exists() else 'Henüz çevrilmedi.'
+        self.translation_preview.setPlainText(translated_text)
+        self.source_count.setText(f'{len(source_text):,} karakter')
+        self.translation_count.setText(f'{len(translated_text):,} karakter')
         self.tabs.setCurrentIndex(3)
 
     def refresh_analysis_preview(self):
