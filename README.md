@@ -174,6 +174,8 @@ Ayarlar gelişmiş/deneysel seçeneklerdir. Emin değilseniz varsayılan değerl
 | Kitap ve EPUB | EPUBCheck | Üretilen EPUB üzerinde harici EPUBCheck doğrulamasını açar |
 | Kitap ve EPUB | EPUBCheck yolu | `epubcheck.jar`, yürütülebilir dosya yolu veya boş bırakılırsa PATH içindeki `epubcheck` |
 | Kitap ve EPUB | Katı sözlük | Açıksa uygulanamayan zorunlu terimde çeviri durur; kapalıyken (varsayılan) kayıt `glossary_fixes.log` dosyasına yazılır ve çeviri devam eder |
+| Kitap ve EPUB | Bitiş işareti denetimi | Varsayılan açık. Kapatılırsa hiçbir çeviri veya glossary düzeltme yanıtında yapay bitiş işareti aranmaz; diğer çıktı ve EPUB kontrolleri sürer |
+| Kitap ve EPUB | İşaretsiz sınır | Varsayılan `400`. Denetim açıkken bu uzunluğa kadar olan ilk çeviri parçaları işaretsiz kabul edilir; örneğin `500` seçilirse sınır `500` olur |
 | Kitap ve EPUB | Otomatik tekrar sayısı | Varsayılan `2`, minimum `1`. İlk isteğe dahil olmayan ek deneme sayısıdır; ön analiz, çeviri, bölüm notları ve bağlam sıkıştırmada ortak kullanılır |
 | LM Studio ve model | Base URL | LM Studio yerel API adresi |
 | LM Studio ve model | Model | LM Studio'da yüklü modeller arasından seçim |
@@ -185,14 +187,12 @@ Ayarlar gelişmiş/deneysel seçeneklerdir. Emin değilseniz varsayılan değerl
 | LM Studio ve model | Fallback context | LM Studio context bilgisi vermezse kullanılacak sınır |
 | LM Studio ve model | Güvenlik payı | Context hesabında boş bırakılan koruyucu token alanı |
 | LM Studio ve model | Token tahmini | Yaklaşık context ön kontrolünü açar veya kapatır |
-| LM Studio ve model | Bitiş işareti denetimi | Varsayılan açık. Kapatılırsa hiçbir çeviri veya glossary düzeltme yanıtında yapay bitiş işareti aranmaz; diğer çıktı ve EPUB kontrolleri sürer |
-| LM Studio ve model | İşaretsiz sınır | Varsayılan `400`. Denetim açıkken bu uzunluğa kadar olan ilk çeviri parçaları işaretsiz kabul edilir; örneğin `500` seçilirse sınır `500` olur |
 
 Parça boyutu veya ilgili çalışma ayarları çeviri sırasında değiştirilirse mevcut bölüm eski ayarlarla tamamlanır; yeni değerler sonraki bölümde devreye girer. Bitiş işareti denetimi, işaretsiz sınır ve otomatik tekrar sayısı bunun istisnasıdır: başarısız veya yarım bölüm yeniden sürdürüldüğünde ilk kaydedilmemiş parçadan itibaren güncel değerler uygulanır. Kaydedilmiş parçalar değiştirilmez.
 
 ## EPUB içe aktarma ve çıktı
 
-Kaynak EPUB değiştirilmez. İçe aktarma sırasında HTML/XHTML içerikleri çalışma metnine dönüştürülür. Görseller `epub-resource:`, iç bağlantılar `epub-link:` ve hedef çapalar `[[EPUB_ANCHOR:...]]` teknik belirteçleriyle korunur. Bu belirteçler model çıktısında eksilir veya değişirse parça kaydedilmez ve otomatik yeniden denenir. Çok uzun tek paragraflar bölünürken teknik belirteçlerin ortadan kesilmemesine dikkat edilir.
+Kaynak EPUB değiştirilmez. İçe aktarma sırasında HTML/XHTML içerikleri çalışma metnine dönüştürülür. Görseller `epub-resource:`, iç bağlantılar `epub-link:` ve hedef çapalar `[[EPUB_ANCHOR:...]]` teknik belirteçleriyle korunur. Model bağımsız bir çapa bloğunu düşürürse ve görünür paragraf düzeni değişmemişse program çapayı kaynak konumuna otomatik geri yerleştirir. Görsel/iç bağlantı hedefi değişirse, çapa belirsiz bir konuma düşerse veya model farklı/fazladan hedef üretirse parça kaydedilmez ve otomatik yeniden denenir. Çok uzun tek paragraflar bölünürken teknik belirteçlerin ortadan kesilmemesine dikkat edilir.
 
 Yalnızca teknik bölüm başlığı ve görsel içeren kapak/harita gibi bölümler çeviri modeline gönderilmez; kaynak Markdown doğrudan çıktı olarak kullanılır. Böylece gereksiz token tüketimi ve görsel hedefinin bozulma riski önlenir.
 
@@ -342,7 +342,7 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 | Sözlük karşılığı eksik | `glossary_fixes.log` dosyasındaki parçaları kontrol edin; terim Türkçe çekimli (kitabı, ağacın, Işıkları) geçiyorsa kabul edilir, farklı sözcük seçilmişse o bölümü sağ tıkla yeniden çevirin veya daha güçlü model deneyin |
 | Proje uyuşmazlığı | Kaynak, prompt, sözlük veya checkpoint dosyalarını çalışma sırasında elle değiştirmeyin |
 | Görseller eski projede bozuk | Eski içe aktarma biçimindeki proje yerine kaynak EPUB'dan yeni proje oluşturun |
-| Yapısal EPUB işaretleri korunmadı | Model bir `epub-resource:`, `epub-link:` veya `EPUB_ANCHOR` hedefini değiştirmiştir; otomatik denemeler de başarısızsa farklı model kullanın veya parçayı yeniden çevirin |
+| Yapısal EPUB işaretleri korunmadı | Bağımsız ve konumu kesin bir `EPUB_ANCHOR` eksikliği otomatik düzeltilir. Bu hata yine görünüyorsa model bir görsel/bağlantı hedefini değiştirmiş, farklı/fazladan çapa üretmiş veya paragraf yapısını çapayı güvenle yerleştiremeyecek biçimde bozmuştur; otomatik denemeler de başarısızsa farklı model kullanın veya parçayı yeniden çevirin |
 | EPUBCheck yolu bulunamadı | Ayarlara resmi `epubcheck.jar`/EXE yolunu yazın; JAR kullanıyorsanız Java'yı PATH'e ekleyin |
 | EPUBCheck hata verdi | Konsol/`translation.log` raporunu inceleyin; oluşturulan EPUB silinmez |
 | DRM/şifreleme hatası | DRM'siz ve kullanma hakkına sahip olduğunuz bir EPUB kullanın |

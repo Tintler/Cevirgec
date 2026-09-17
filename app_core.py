@@ -347,6 +347,78 @@ def validate_translation_structure(source, translated):
         raise ValueError('Yapisal EPUB isaretleri korunmadi: ' + ' | '.join(problems))
 
 
+def restore_missing_epub_anchors(source, translated):
+    """Modelin dusurdugu bagimsiz EPUB capa bloklarini kaynak konumuna koyar.
+
+    EPUB importer, blok duzeyindeki ``id``/``name`` hedeflerini kendi Markdown
+    paragrafinda tasir. Capa gorunur metin olmadigi icin ceviri modeline
+    birakilmasi gereksiz ve guvenilmezdir. Yalnizca kaynak ve cevirinin gorunur
+    blok sayilari esitken eksik capa bloklari geri eklenir. Degismis/fazladan
+    capa ya da metin icine gomulu capa otomatik duzeltilmez; normal yapisal
+    dogrulama bunlari reddeder.
+    """
+    anchor_pattern = re.compile(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]')
+    source_anchors = Counter(anchor_pattern.findall(source))
+    translated_anchors = Counter(anchor_pattern.findall(translated))
+    missing = source_anchors - translated_anchors
+    if not missing or translated_anchors - source_anchors:
+        return translated, 0
+
+    separator = re.compile(r'\n[ \t]*\n+')
+
+    def blocks(text):
+        result = []
+        start = 0
+        for match in separator.finditer(text):
+            if text[start:match.start()].strip():
+                result.append((start, match.start(), text[start:match.start()]))
+            start = match.end()
+        if text[start:].strip():
+            result.append((start, len(text), text[start:]))
+        return result
+
+    def anchor_only(block):
+        without = anchor_pattern.sub('', block)
+        return not without.strip() and bool(anchor_pattern.search(block))
+
+    source_blocks = blocks(source)
+    translated_blocks = blocks(translated)
+    source_visible = [item for item in source_blocks if not anchor_only(item[2])]
+    translated_visible = [item for item in translated_blocks if not anchor_only(item[2])]
+    if len(source_visible) != len(translated_visible):
+        return translated, 0
+
+    insertions = []
+    visible_before = 0
+    remaining = missing.copy()
+    for _start, _end, block in source_blocks:
+        if not anchor_only(block):
+            visible_before += 1
+            continue
+        tokens = []
+        for value in anchor_pattern.findall(block):
+            if remaining[value] > 0:
+                tokens.append(f'[[EPUB_ANCHOR:{value}]]')
+                remaining[value] -= 1
+        if not tokens:
+            continue
+        if visible_before < len(translated_visible):
+            position = translated_visible[visible_before][0]
+            payload = '\n'.join(tokens) + '\n\n'
+        else:
+            position = len(translated.rstrip())
+            payload = ('\n\n' if position else '') + '\n'.join(tokens)
+        insertions.append((position, payload, len(tokens)))
+
+    # Kaynakta yalniz blok halinde bulunmayan bir eksik capa varsa konumu
+    # belirsizdir; hicbir seyi kismen degistirmeden kati dogrulamaya birak.
+    if any(remaining.values()):
+        return translated, 0
+    for position, payload, _count in reversed(insertions):
+        translated = translated[:position] + payload + translated[position:]
+    return translated, sum(count for _position, _payload, count in insertions)
+
+
 def image_only_source(text):
     """Teknik TOC basligi disinda yalnizca gorsel/isaret tasiyan bolum mu?"""
     images = list(markdown_spans(text, image_only=True))
@@ -1473,6 +1545,12 @@ class TranslationEngine:
                     )
                     translated = self._enforce_glossary(
                         client, chunks[index], translated, glossary, int(cfg['max_tokens']))
+                    translated, restored_anchors = restore_missing_epub_anchors(chunks[index], translated)
+                    if restored_anchors:
+                        self.log(
+                            f'EPUB capasi kaynak konumundan otomatik geri yerlestirildi: '
+                            f'{restored_anchors}'
+                        )
                     validate_translation_structure(chunks[index], translated)
                     break
                 except (ValueError, RuntimeError) as error:

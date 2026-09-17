@@ -15,7 +15,7 @@ import cevir
 from app_core import (Client, DEFAULT_CONFIG, FileLock, PauseController, TranslationEngine,
                       _target_search, analysis_terms, book_data, chapters_containing, first_heading,
                       image_only_source, load_glossary, parse_analysis, reset_chapter, rows, split_source,
-                      translation_requires_completion_marker, validate_rerun,
+                      restore_missing_epub_anchors, translation_requires_completion_marker, validate_rerun,
                       validate_translation_structure)
 from epub_import import prepare
 from epub_output import build_translated_epub, inline_markup, run_epubcheck, validate_epub_archive
@@ -1595,6 +1595,54 @@ class ReviewFixTests(unittest.TestCase):
             validate_translation_structure(table, '# T\n\nX ve Y\n')
         self.assertTrue(app_core.retryable_translation_error(
             ValueError('Yapisal EPUB isaretleri korunmadi: gorsel')))
+
+    def test_missing_standalone_epub_anchor_is_restored_at_source_block(self):
+        source = ('# Chapter\n\nFirst paragraph.\n\n'
+                  '[[EPUB_ANCHOR:OPS/c1.xhtml%23page_68]]\n\n'
+                  'Second paragraph.\n\nThird paragraph.')
+        translated = '# Bölüm\n\nİlk paragraf.\n\nİkinci paragraf.\n\nÜçüncü paragraf.'
+        restored, count = restore_missing_epub_anchors(source, translated)
+        self.assertEqual(count, 1)
+        self.assertIn(
+            'İlk paragraf.\n\n[[EPUB_ANCHOR:OPS/c1.xhtml%23page_68]]\n\nİkinci paragraf.',
+            restored,
+        )
+        validate_translation_structure(source, restored)
+
+    def test_translation_pipeline_restores_anchor_without_retry(self):
+        class AnchorDroppingClient:
+            translation_calls = 0
+            def __init__(self, cfg, log=print): self.cfg = cfg
+            def context_length(self): return 32768, 'test'
+            def generate(self, system, user, max_tokens, require_marker=True, allow_json_fence=False):
+                if 'SOURCE TO TRANSLATE' in user:
+                    AnchorDroppingClient.translation_calls += 1
+                    return '# Bölüm\n\nİlk paragraf.\n\nİkinci paragraf.'
+                return '- Kısa bölüm notu.'
+
+        with tempfile.TemporaryDirectory() as temp:
+            book = make_book(temp, [('001.md', 'next')], notes=False)
+            anchor = '[[EPUB_ANCHOR:OPS/c1.xhtml%23page_68]]'
+            (book / 'source' / '001.md').write_text(
+                '# Chapter\n\nFirst paragraph.\n\n' + anchor + '\n\nSecond paragraph.',
+                encoding='utf-8',
+            )
+            logs = []
+            with patch('app_core.Client', AnchorDroppingClient):
+                self.engine(logs).run_file(book, '001.md')
+            translated = (book / 'translation' / '001.md').read_text(encoding='utf-8')
+            self.assertEqual(AnchorDroppingClient.translation_calls, 1)
+            self.assertIn(anchor, translated)
+            self.assertTrue(any('otomatik geri yerlestirildi: 1' in line for line in logs))
+
+    def test_ambiguous_or_changed_epub_anchor_is_not_silently_repaired(self):
+        source = 'First.\n\n[[EPUB_ANCHOR:OPS/c1.xhtml%23a]]\n\nSecond.'
+        merged = 'Birinci ve ikinci paragraf birleştirildi.'
+        self.assertEqual(restore_missing_epub_anchors(source, merged), (merged, 0))
+        changed = 'Birinci.\n\n[[EPUB_ANCHOR:OPS/c1.xhtml%23b]]\n\nİkinci.'
+        self.assertEqual(restore_missing_epub_anchors(source, changed), (changed, 0))
+        with self.assertRaisesRegex(ValueError, 'Yapisal EPUB'):
+            validate_translation_structure(source, changed)
 
     def test_image_only_chapter_is_copied_without_model_request(self):
         class NoRequestClient:

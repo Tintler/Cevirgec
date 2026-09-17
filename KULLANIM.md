@@ -83,7 +83,7 @@ Aynı çıktı mevcutsa `TR-2`, `TR-3` biçiminde yeni ad kullanılır. Kaynak E
 
 Eski bir çalışma klasörüyle yeniden EPUB üretildiğinde içe aktarıcının eklediği yapay ilk başlıklar otomatik gizlenir; bunun için Calibre'de elle düzenleme veya yeniden çeviri gerekmez.
 
-Yeni içe aktarılan EPUB'larda görsellerin konumu Markdown içinde `epub-resource:`, iç bağlantılar `epub-link:` ve hedef çapalar `[[EPUB_ANCHOR:...]]` belirteçleriyle korunur. Model bunlardan birini değiştirirse parça kaydedilmez. Yalnızca teknik bölüm başlığı ile görsel içeren kapak/harita sayfaları modele gönderilmeden doğrudan korunur.
+Yeni içe aktarılan EPUB'larda görsellerin konumu Markdown içinde `epub-resource:`, iç bağlantılar `epub-link:` ve hedef çapalar `[[EPUB_ANCHOR:...]]` belirteçleriyle korunur. Model bağımsız bir çapa bloğunu düşürürse ve görünür paragraf sayısı korunmuşsa çapa kaynak paragraf konumuna otomatik geri yerleştirilir; Konsol'a kaç çapanın düzeltildiği yazılır. Görsel/iç bağlantı hedefi değişirse, çapanın konumu belirsizse veya model farklı/fazladan çapa üretirse parça kaydedilmez ve otomatik yeniden denenir. Yalnızca teknik bölüm başlığı ile görsel içeren kapak/harita sayfaları modele gönderilmeden doğrudan korunur.
 
 Tablo ve iç bağlantı eşlemesi import sürümü 4 ile oluşturulur. Eski import sürümünde kaybolmuş görsel/dipnot bilgisi geriye dönük çıkarılamaz; bu özellik gerekiyorsa kaynak EPUB yeni bir proje klasörüne tekrar içe aktarılmalıdır. Basit tablolar korunur; `rowspan`/`colspan`, karmaşık CSS düzenleri, JavaScript ve etkileşimli EPUB öğeleri sadeleşebilir.
 
@@ -91,7 +91,7 @@ Tablo ve iç bağlantı eşlemesi import sürümü 4 ile oluşturulur. Eski impo
 
 **Ayarlar → EPUBCheck** ile harici standart doğrulaması açılabilir. **EPUBCheck yolu** alanına `epubcheck.jar` veya EPUBCheck çalıştırılabilir dosyasının yolu yazılır; alan boşsa PATH içindeki `epubcheck` aranır. JAR için Java'nın PATH içinde olması gerekir. Doğrulama çıktısı Konsol ve `translation.log` dosyasına yazılır. Hata halinde üretilen EPUB korunur ancak işlem hata olarak bildirilir.
 
-Ayarlar penceresinde **EPUBCheck**, **EPUBCheck yolu**, **Katı sözlük** ve **Otomatik tekrar sayısı** seçenekleri **Kitap ve EPUB** grubundadır. Tekrar alanının tooltip'i değerin ilk isteğe dahil olmayan ek deneme sayısı olduğunu ve hangi işlemlerde kullanıldığını açıklar. Bunların altındaki ayrı **LM Studio ve model** grubunda **Base URL**, model, üretim/context ayarları, **Bitiş işareti denetimi** ve **İşaretsiz sınır** bulunur. Her iki bitiş ayarının tooltip'i etkisini ve kapatıldığında hangi kontrollerin çalışmaya devam ettiğini açıklar.
+Ayarlar penceresinde **EPUBCheck**, **EPUBCheck yolu**, **Katı sözlük**, **Bitiş işareti denetimi**, **İşaretsiz sınır** ve **Otomatik tekrar sayısı** seçenekleri **Kitap ve EPUB** grubundadır. Tekrar alanının tooltip'i değerin ilk isteğe dahil olmayan ek deneme sayısı olduğunu ve hangi işlemlerde kullanıldığını açıklar. Bunların altındaki ayrı **LM Studio ve model** grubunda **Base URL**, model ve üretim/context ayarları bulunur. Her iki bitiş ayarının tooltip'i etkisini ve kapatıldığında hangi kontrollerin çalışmaya devam ettiğini açıklar.
 
 ## Glossary
 
