@@ -10,10 +10,10 @@ import threading
 import traceback
 
 from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal, Slot
-from PySide6.QtGui import QBrush, QCloseEvent, QColor, QCursor, QIcon, QPixmap
+from PySide6.QtGui import QCloseEvent, QCursor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-    QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QPlainTextEdit, QProgressBar, QPushButton, QSpinBox, QDoubleSpinBox, QSplitter,
     QTabWidget, QTableWidget, QTableWidgetItem, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
@@ -27,69 +27,26 @@ from epub_import import prepare
 
 
 STYLE = """
-QWidget { background:#0d1117; color:#c9d1de; font:10pt 'Segoe UI'; }
-QMainWindow { background:#0a0e14; }
-QLabel { background:transparent; }
+QWidget { background:#10141b; color:#d9dde5; font:10pt 'Segoe UI'; }
+QMainWindow { background:#0c1016; }
 QLineEdit,QPlainTextEdit,QTreeWidget,QTableWidget,QTabWidget::pane,QSpinBox,QDoubleSpinBox,QComboBox {
-  background:#151c29; border:1px solid #2a3450; border-radius:6px; padding:5px;
-  selection-background-color:#8a6a1d; selection-color:#ffffff;
+  background:#151b24; border:1px solid #293241; padding:5px; selection-background-color:#805f19;
 }
-QPlainTextEdit { padding:8px; }
-QLineEdit:focus,QPlainTextEdit:focus,QSpinBox:focus,QDoubleSpinBox:focus,QComboBox:focus { border:1px solid #7a5b17; }
-QComboBox QAbstractItemView { background:#151c29; border:1px solid #39445c; selection-background-color:#8a6a1d; }
-QPushButton { background:#1c2434; border:1px solid #333f5c; padding:7px 14px; border-radius:7px; color:#dbe4f3; }
-QPushButton:hover { background:#273149; border-color:#4a5a80; }
-QPushButton:pressed { background:#111622; }
-QPushButton:disabled { color:#64708a; background:#181f2d; border-color:#272f42; }
-QPushButton#primary {
-  background:qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #f0b83c, stop:1 #d99e26);
-  color:#14181f; font-weight:700; border:none; border-radius:7px; padding:9px 22px;
-}
-QPushButton#primary:hover { background:qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #f6c24b, stop:1 #e2a92e); }
-QPushButton#primary:disabled { background:#5c4c1f; color:#a89c66; }
-QPushButton#ghost { background:transparent; border:1px solid #39445c; }
-QPushButton#ghost:hover { background:#1c2434; }
-QFrame#card { background:#111824; border:1px solid #232e44; border-radius:12px; }
-QFrame#statusBar { background:#111824; border:1px solid #232e44; border-radius:9px; }
-QFrame#sep { background:#2a3450; border:none; }
-QLabel#appTitle { font-size:19pt; font-weight:700; color:#f2bd45; }
-QLabel#appSubtitle { font-size:9pt; color:#7d899f; }
-QLabel#sectionLabel { color:#e2b64c; font-weight:700; }
-QLabel#modelStatus { background:#151c29; border:1px solid #2a3450; border-radius:6px; padding:6px 9px; }
-QLabel#phasePill { background:#2a2116; color:#e8c170; border:1px solid #6b5420; border-radius:9px; padding:4px 12px; font-weight:600; }
-QLabel#currentPill { background:#151c29; color:#9fb3d8; border:1px solid #2a3450; border-radius:9px; padding:4px 12px; }
-QLabel#progressValue { background:#0d1420; color:#f2f5fb; border:1px solid #33405c; border-radius:6px; padding:5px 10px; font-weight:700; }
-QLabel#lastSaved { color:#74809a; }
-QLabel#settingsWarning { background:#262013; color:#e8c170; border:1px solid #6b5420; border-radius:6px; padding:8px; }
-QLabel#settingsSection { color:#e2b64c; font-weight:600; padding-top:9px; padding-bottom:4px; border-bottom:1px solid #2a3450; }
-QTreeWidget { alternate-background-color:#10161f; }
-QTreeWidget::item { padding:4px; border-radius:4px; }
-QTreeWidget::item:hover { background:#1a2434; }
-QTreeWidget::item:selected { background:#2c3a55; color:#ffffff; }
-QHeaderView::section { background:#151c29; color:#9db1d0; border:none; border-bottom:1px solid #2a3450; padding:7px; font-weight:600; }
-QTabWidget::pane { border:1px solid #232e44; border-radius:8px; top:-1px; }
-QTabBar::tab { background:#111824; color:#8fa0bd; padding:8px 18px; border:1px solid #232e44; border-bottom:none; border-top-left-radius:7px; border-top-right-radius:7px; margin-right:3px; }
-QTabBar::tab:selected { color:#f2bd45; background:#1a2334; border-bottom:2px solid #f2bd45; }
-QTabBar::tab:hover:!selected { background:#162031; }
-QProgressBar { border:1px solid #2a3450; background:#141b28; border-radius:7px; text-align:center; }
-QProgressBar::chunk { background:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #e0aa3a, stop:1 #f2bd45); border-radius:6px; }
-QScrollBar:vertical { background:#121925; width:12px; border-radius:6px; }
-QScrollBar::handle:vertical { background:#2b3850; border-radius:6px; min-height:30px; }
-QScrollBar::handle:vertical:hover { background:#3a4a6a; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
-QScrollBar:horizontal { background:#121925; height:12px; border-radius:6px; }
-QScrollBar::handle:horizontal { background:#2b3850; border-radius:6px; min-width:30px; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:0; }
-QCheckBox { spacing:7px; }
-QCheckBox::indicator { width:16px; height:16px; border:1px solid #3b4a6b; border-radius:4px; background:#141b28; }
-QCheckBox::indicator:hover { border-color:#d99e26; }
-QCheckBox::indicator:checked { background:#d99e26; border-color:#d99e26; }
-QToolTip { background:#1b2434; color:#e6ebf5; border:1px solid #3b4a6b; padding:6px; border-radius:4px; }
-QMenu { background:#141b28; color:#d3dcec; border:1px solid #2a3450; border-radius:7px; padding:5px; }
-QMenu::item { padding:6px 22px; border-radius:4px; }
-QMenu::item:selected { background:#2c3a55; }
-QTableWidget { gridline-color:#232e44; }
-QTableWidget::item:selected { background:#2c3a55; }
+QComboBox QAbstractItemView { background:#151b24; border:1px solid #354154; selection-background-color:#805f19; }
+QPushButton { background:#202936; border:1px solid #354154; padding:7px 12px; }
+QPushButton:hover { background:#293548; }
+QPushButton#primary { background:#d0a438; color:#11151b; font-weight:600; border:0; }
+QPushButton#primary:hover { background:#e0b64c; }
+QTabBar::tab { background:#151b24; padding:8px 15px; border:1px solid #293241; }
+QTabBar::tab:selected { color:#e1b347; border-bottom:2px solid #e1b347; }
+QProgressBar { border:1px solid #293241; background:#151b24; text-align:center; }
+QProgressBar::chunk { background:#d0a438; }
+QLabel#progressValue { background:#151b24; color:#f4f6fa; border:1px solid #354154; padding:5px 8px; font-weight:600; }
+QHeaderView::section { background:#1a222e; border:0; padding:6px; }
+QLabel#appTitle { font-size:18pt; font-weight:600; color:#f0b82e; }
+QLabel#modelStatus { background:#151b24; border:1px solid #293241; padding:7px; }
+QLabel#settingsWarning { background:#2a2112; color:#e7c66b; border:1px solid #705a25; padding:8px; }
+QLabel#settingsSection { color:#e1b347; font-weight:600; padding-top:9px; padding-bottom:4px; border-bottom:1px solid #354154; }
 """
 
 
@@ -411,103 +368,64 @@ class MainWindow(QMainWindow):
         self._build_ui(); QTimer.singleShot(0, self.refresh_model_info)
 
     def _build_ui(self):
-        """G41: arayuz yeniden tasarimi — baslik cubugu + proje karti + kalici durum seridi."""
-        central = QWidget(); root = QVBoxLayout(central)
-        root.setContentsMargins(14, 10, 14, 12); root.setSpacing(10)
-        self.setCentralWidget(central)
-        # ---- Baslik cubugu ----
-        header = QHBoxLayout(); header.setSpacing(10)
-        logo = QLabel(); logo.setFixedSize(42, 42)
+        central = QWidget(); root = QVBoxLayout(central); self.setCentralWidget(central)
+        header = QHBoxLayout(); logo = QLabel()
         logo_path = ROOT / 'assets' / 'app.png'
-        if logo_path.exists():
-            logo.setPixmap(QPixmap(str(logo_path)).scaled(42, 42, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        brand = QVBoxLayout(); brand.setSpacing(0)
+        if logo_path.exists(): logo.setPixmap(QPixmap(str(logo_path)).scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         title = QLabel('Çevirgeç'); title.setObjectName('appTitle')
-        subtitle = QLabel('EPUB → Türkçe çeviri aracı'); subtitle.setObjectName('appSubtitle')
-        brand.addWidget(title); brand.addWidget(subtitle)
-        header.addWidget(logo); header.addLayout(brand); header.addStretch()
         self.open_project_button = QPushButton('Projeyi sürdür')
-        self.open_project_button.setObjectName('ghost')
+        self.open_project_button.setObjectName('openProjectButton')
         self.open_project_button.setToolTip(
             'Daha önce oluşturulmuş {KitapAdı}-ceviri klasörünü açar ve kayıtlı checkpointlerden devam eder.'
         )
         self.open_project_button.clicked.connect(self.choose_existing)
-        glossary_button = QPushButton('Terim düzenle'); glossary_button.clicked.connect(self.edit_glossary)
-        settings = QPushButton('Ayarlar'); settings.clicked.connect(self.show_settings)
-        header.addWidget(self.open_project_button); header.addWidget(glossary_button); header.addWidget(settings)
-        root.addLayout(header)
-        # ---- Proje karti ----
-        card = QFrame(); card.setObjectName('card')
-        form = QGridLayout(card); form.setContentsMargins(14, 12, 14, 12)
-        form.setHorizontalSpacing(12); form.setVerticalSpacing(9); form.setColumnStretch(1, 1)
-        self.epub_edit = QLineEdit(); self.epub_edit.setReadOnly(True)
-        self.epub_edit.setPlaceholderText('Kaynak .epub dosyası seçilmedi')
-        choose_epub = QPushButton('Dosya seç'); choose_epub.clicked.connect(self.choose_epub)
-        self.folder_edit = QLineEdit(); self.folder_edit.setReadOnly(True)
-        self.folder_edit.setPlaceholderText('Çeviri projesinin oluşturulacağı klasör')
-        choose_folder = QPushButton('Klasör seç'); choose_folder.clicked.connect(self.choose_folder)
-        form.addWidget(QLabel('Kaynak EPUB'), 0, 0)
-        form.addWidget(self.epub_edit, 0, 1); form.addWidget(choose_epub, 0, 2)
-        form.addWidget(QLabel('Çalışma klasörü'), 1, 0)
-        form.addWidget(self.folder_edit, 1, 1); form.addWidget(choose_folder, 1, 2)
-        sep = QFrame(); sep.setFixedHeight(1); sep.setObjectName('sep'); form.addWidget(sep, 2, 0, 1, 3)
-        model_caption = QLabel('Seçili model')
+        glossary_button = QPushButton('Terim düzenle'); glossary_button.setObjectName('glossaryButton')
+        glossary_button.clicked.connect(self.edit_glossary)
+        settings = QPushButton('Ayarlar'); settings.setObjectName('settingsButton'); settings.clicked.connect(self.show_settings)
+        header.addWidget(logo); header.addWidget(title); header.addStretch()
+        header.addWidget(glossary_button); header.addWidget(self.open_project_button); header.addWidget(settings); root.addLayout(header)
+        top = QFormLayout()
         self.model_label = QLabel(load_config()['model']); self.model_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        status_caption = QLabel('LM Studio')
-        self.model_status = QLabel('LM Studio sorgulanıyor…'); self.model_status.setObjectName('modelStatus')
-        self.model_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        top.addRow('Seçili model', self.model_label)
+        self.model_status = QLabel('LM Studio sorgulanıyor…'); self.model_status.setObjectName('modelStatus'); self.model_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         refresh = QPushButton('Yenile'); refresh.clicked.connect(self.refresh_model_info)
-        form.addWidget(model_caption, 3, 0); form.addWidget(self.model_label, 3, 1)
-        form.addWidget(status_caption, 4, 0)
         model_row = QHBoxLayout(); model_row.addWidget(self.model_status, 1); model_row.addWidget(refresh)
-        form.addLayout(model_row, 4, 1, 1, 2)
-        root.addWidget(card)
-        # ---- Ana calisma alani ----
+        top.addRow('LM Studio', model_row)
+        self.epub_edit = QLineEdit(); self.epub_edit.setReadOnly(True); choose_epub = QPushButton('Dosya seç'); choose_epub.clicked.connect(self.choose_epub)
+        row = QHBoxLayout(); row.addWidget(self.epub_edit); row.addWidget(choose_epub); top.addRow('EPUB dosyası', row)
+        self.folder_edit = QLineEdit(); self.folder_edit.setReadOnly(True); choose_folder = QPushButton('Klasör seç'); choose_folder.clicked.connect(self.choose_folder)
+        row2 = QHBoxLayout(); row2.addWidget(self.folder_edit); row2.addWidget(choose_folder); top.addRow('Çalışma klasörü', row2)
+        root.addLayout(top)
         splitter = QSplitter(Qt.Horizontal); root.addWidget(splitter, 1)
-        tree_pane = QFrame(); tree_pane.setObjectName('card')
-        tree_layout = QVBoxLayout(tree_pane); tree_layout.setContentsMargins(10, 10, 10, 10); tree_layout.setSpacing(6)
-        tree_caption = QLabel('BÖLÜMLER'); tree_caption.setObjectName('sectionLabel')
-        tree_layout.addWidget(tree_caption)
         self.tree = QTreeWidget(); self.tree.setHeaderLabels(['Bölümler', 'Durum'])
-        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.tree.setMinimumWidth(380); self.tree.setAlternatingRowColors(True)
-        self.tree.itemSelectionChanged.connect(self.preview_selected)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch); self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.tree.setMinimumWidth(390); self.tree.itemSelectionChanged.connect(self.preview_selected); splitter.addWidget(self.tree)
         # G28: sinyal yalnizca bir kez baglanir (populate_tree her cagrida baglarsa menu cogalir).
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.tree_context_menu)
-        tree_layout.addWidget(self.tree)
-        splitter.addWidget(tree_pane)
-        self.tabs = QTabWidget(); splitter.addWidget(self.tabs); splitter.setSizes([420, 780])
-        self.console = QPlainTextEdit(); self.console.setReadOnly(True)
-        self.console.document().setMaximumBlockCount(10000); self.tabs.addTab(self.console, 'Konsol')
+        self.tabs = QTabWidget(); splitter.addWidget(self.tabs); splitter.setSizes([410, 790])
+        status = QWidget(); status_layout = QVBoxLayout(status)
+        self.phase = QLabel('Başlatılmadı'); self.current = QLabel('Bölüm seçilmedi')
+        self.progress = QProgressBar(); self.progress.setRange(0, 100); self.progress.setTextVisible(False)
+        self.progress_value = QLabel('0%'); self.progress_value.setObjectName('progressValue')
+        self.progress_value.setAlignment(Qt.AlignCenter); self.progress_value.setMinimumWidth(62)
+        progress_row = QHBoxLayout(); progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.addWidget(self.progress, 1); progress_row.addWidget(self.progress_value)
+        status_layout.addWidget(self.phase); status_layout.addWidget(self.current); status_layout.addLayout(progress_row); status_layout.addStretch()
+        self.tabs.addTab(status, 'Durum')
+        self.console = QPlainTextEdit(); self.console.setReadOnly(True); self.console.document().setMaximumBlockCount(10000); self.tabs.addTab(self.console, 'Konsol')
         self.analysis_preview = QPlainTextEdit(); self.analysis_preview.setReadOnly(True)
         self.analysis_preview.setPlainText('Ön analiz seçilirse sonuç burada gösterilir.')
         self.tabs.addTab(self.analysis_preview, 'Ön Analiz')
         preview = QSplitter(Qt.Horizontal); self.source_preview = QPlainTextEdit(); self.translation_preview = QPlainTextEdit()
         self.source_preview.setReadOnly(True); self.translation_preview.setReadOnly(True)
-        preview.addWidget(self.source_preview); preview.addWidget(self.translation_preview)
-        self.tabs.addTab(preview, 'Kaynak / Türkçe')
-        # ---- Kalici durum seridi (her zaman gorunur) ----
-        strip = QFrame(); strip.setObjectName('statusBar')
-        strip_layout = QHBoxLayout(strip); strip_layout.setContentsMargins(10, 6, 10, 6); strip_layout.setSpacing(10)
-        self.phase = QLabel('Başlatılmadı'); self.phase.setObjectName('phasePill')
-        self.current = QLabel('Bölüm seçilmedi'); self.current.setObjectName('currentPill')
-        self.progress = QProgressBar(); self.progress.setRange(0, 100); self.progress.setTextVisible(False)
-        self.progress_value = QLabel('0%'); self.progress_value.setObjectName('progressValue')
-        self.progress_value.setAlignment(Qt.AlignCenter); self.progress_value.setMinimumWidth(58)
-        strip_layout.addWidget(self.phase); strip_layout.addWidget(self.current)
-        strip_layout.addWidget(self.progress, 1); strip_layout.addWidget(self.progress_value)
-        root.addWidget(strip)
-        # ---- Alt kontrol cubugu ----
-        bottom = QHBoxLayout(); self.last_saved = QLabel('Son kayıt: —')
-        self.last_saved.setObjectName('lastSaved'); bottom.addWidget(self.last_saved); bottom.addStretch()
+        preview.addWidget(self.source_preview); preview.addWidget(self.translation_preview); self.tabs.addTab(preview, 'Kaynak / Türkçe')
+        bottom = QHBoxLayout(); self.last_saved = QLabel('Son kayıt: —'); bottom.addWidget(self.last_saved); bottom.addStretch()
         self.pre_analysis = QCheckBox('Ön analiz yap (isteğe bağlı)')
         self.pre_analysis.setChecked(False)
         self.pre_analysis.setToolTip('İsteğe bağlıdır. Kitap çeviriden önce analiz edilir ve toplam işlem süresi iki kata kadar uzayabilir.')
         bottom.addWidget(self.pre_analysis)
-        self.control = QPushButton('Çeviriyi Başlat'); self.control.setObjectName('primary')
-        self.control.clicked.connect(self.control_clicked); bottom.addWidget(self.control)
+        self.control = QPushButton('Çeviriyi Başlat'); self.control.setObjectName('primary'); self.control.clicked.connect(self.control_clicked); bottom.addWidget(self.control)
         root.addLayout(bottom)
 
     def _detach_project(self):
@@ -654,7 +572,6 @@ class MainWindow(QMainWindow):
                 label = {'analysis': 'Ön analiz', 'analysis_saved': 'Ön analiz', 'translation': 'Çevriliyor', 'notes': 'Notlar hazırlanıyor'}.get(self.active_phase, label)
             item = QTreeWidgetItem([title, label])
             item.setData(0, Qt.UserRole, filename)
-            item.setForeground(1, self._status_brush(label))
             self.tree_items[filename] = item
             parent = None; key = ()
             for label in hierarchy[:-1]:
@@ -666,21 +583,6 @@ class MainWindow(QMainWindow):
             parent.addChild(item) if parent else self.tree.addTopLevelItem(item)
         self.tree.expandAll()
 
-    @staticmethod
-    def _status_brush(label):
-        """G41: bolum agacindaki durum etiketlerini renklendirir."""
-        colors = {
-            'Tamamlandı': '#6fdb87',
-            'Devam edecek': '#e8c170',
-            'Sıradaki': '#8ab2f0',
-            'Bekliyor': '#6b7488',
-            'Çevriliyor': '#f0b83c',
-            'Ön analiz': '#c58ff0',
-            'Ön analiz hazır': '#c58ff0',
-            'Notlar hazırlanıyor': '#e8c170',
-        }
-        return QBrush(QColor(colors.get(label, '#c9d1de')))
-
     def preview_selected(self):
         selected = self.tree.selectedItems()
         if not selected or not self.book: return
@@ -689,7 +591,7 @@ class MainWindow(QMainWindow):
         self.source_preview.setPlainText(read(self.book / 'source' / filename))
         target = self.book / 'translation' / filename
         self.translation_preview.setPlainText(read(target) if target.exists() else 'Henüz çevrilmedi.')
-        self.tabs.setCurrentIndex(2)
+        self.tabs.setCurrentIndex(3)
 
     def refresh_analysis_preview(self):
         if not self.book:
@@ -797,7 +699,7 @@ class MainWindow(QMainWindow):
         self.worker.review_requested.connect(self.handle_review)
         self.thread.started.connect(self.worker.run); self.worker.log.connect(self.append_log); self.worker.progress.connect(self.update_progress); self.worker.state.connect(self.apply_state); self.worker.finished.connect(self.worker_finished)
         self.worker.finished.connect(self.thread.quit); self.thread.finished.connect(self.worker.deleteLater); self.thread.finished.connect(self.thread_stopped); self.thread.finished.connect(self.thread.deleteLater)
-        self.runtime_state = 'running'; self.control.setText('Duraklat'); self.phase.setText('Ön analiz hazırlanıyor' if use_analysis else 'Çeviri çalışıyor'); self.tabs.setCurrentIndex(1 if use_analysis else 0); self.thread.start()
+        self.runtime_state = 'running'; self.control.setText('Duraklat'); self.phase.setText('Ön analiz hazırlanıyor' if use_analysis else 'Çeviri çalışıyor'); self.tabs.setCurrentIndex(2 if use_analysis else 0); self.thread.start()
 
     @Slot(list)
     def handle_review(self, pending):
@@ -867,7 +769,7 @@ class MainWindow(QMainWindow):
         else:
             self.phase.setText('Tamamlandı' if outcome is True else 'Hata')
         if outcome == 'failed':
-            self.tabs.setCurrentIndex(0); QMessageBox.critical(self, 'Çeviri durdu', message)
+            self.tabs.setCurrentIndex(1); QMessageBox.critical(self, 'Çeviri durdu', message)
 
     @Slot()
     def thread_stopped(self):
