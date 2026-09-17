@@ -249,25 +249,15 @@ class SettingsDialog(QDialog):
         strict = QCheckBox('Uygulanamayan terimde çeviriyi durdur'); strict.setChecked(bool(config.get('glossary_strict', False)))
         strict.setToolTip('Kapalıyken uyarı glossary_fixes.log dosyasına yazılır ve çeviri devam eder.')
         self.fields['glossary_strict'] = strict; layout.addRow('Katı sözlük', strict)
-        marker_enabled = QCheckBox('Uzun çeviri yanıtlarında eksik sonuç korumasını kullan')
-        marker_enabled.setChecked(bool(config.get('completion_marker_enabled', True)))
-        marker_enabled.setToolTip(
-            'Açıksa sınırı aşan çeviri parçalarında modelin yapay bitiş işaretini üretmesi gerekir. '
-            'Kapalıysa hiçbir çeviri veya glossary düzeltme yanıtında bitiş işareti aranmaz; '
-            'boş/bozuk çıktı, token sınırı ve EPUB yapı kontrolleri çalışmaya devam eder.'
+        retry_count = QSpinBox(); retry_count.setRange(1, 100)
+        retry_count.setValue(int(config.get('auto_retry_count', 2)))
+        retry_count.setToolTip(
+            'Geçici veya doğrulanamayan yanıttan sonra yapılacak ek deneme sayısıdır. '
+            'İlk istek bu sayıya dahil değildir: 2 seçilirse toplam en fazla 3 istek yapılır. '
+            'Ön analiz, çeviri, bölüm notları ve bağlam sıkıştırma isteklerinin tümünde kullanılır.'
         )
-        self.fields['completion_marker_enabled'] = marker_enabled
-        layout.addRow('Bitiş işareti denetimi', marker_enabled)
-        marker_limit = QSpinBox(); marker_limit.setRange(0, 1000000)
-        marker_limit.setValue(int(config.get('completion_marker_exempt_chars', 400)))
-        marker_limit.setToolTip(
-            'Denetim açıkken bu sayı kadar veya daha kısa ilk çeviri parçalarında bitiş işareti aranmaz. '
-            'Örneğin 500 seçilirse 500 karakter ve altı işaretsiz kabul edilir; 501 ve üstünde işaret zorunludur.'
-        )
-        marker_limit.setEnabled(marker_enabled.isChecked())
-        marker_enabled.toggled.connect(marker_limit.setEnabled)
-        self.fields['completion_marker_exempt_chars'] = marker_limit
-        layout.addRow('İşaretsiz sınır (karakter)', marker_limit)
+        self.fields['auto_retry_count'] = retry_count
+        layout.addRow('Otomatik tekrar sayısı', retry_count)
 
         model_section = QLabel('LM Studio ve model'); model_section.setObjectName('settingsSection'); layout.addRow(model_section)
         base_url = QLineEdit(str(config['base_url'])); self.fields['base_url'] = base_url; layout.addRow('Base URL', base_url)
@@ -291,6 +281,25 @@ class SettingsDialog(QDialog):
             field = QSpinBox(); field.setRange(1, maximum); field.setValue(int(config[key])); self.fields[key] = field; layout.addRow(title, field)
         estimate = QCheckBox(); estimate.setChecked(bool(config.get('token_estimation_enabled', True)))
         self.fields['token_estimation_enabled'] = estimate; layout.addRow('Token tahmini', estimate)
+        marker_enabled = QCheckBox('Uzun çeviri yanıtlarında eksik sonuç korumasını kullan')
+        marker_enabled.setChecked(bool(config.get('completion_marker_enabled', True)))
+        marker_enabled.setToolTip(
+            'Açıksa sınırı aşan çeviri parçalarında modelin yapay bitiş işaretini üretmesi gerekir. '
+            'Kapalıysa hiçbir çeviri veya glossary düzeltme yanıtında bitiş işareti aranmaz; '
+            'boş/bozuk çıktı, token sınırı ve EPUB yapı kontrolleri çalışmaya devam eder.'
+        )
+        self.fields['completion_marker_enabled'] = marker_enabled
+        layout.addRow('Bitiş işareti denetimi', marker_enabled)
+        marker_limit = QSpinBox(); marker_limit.setRange(0, 1000000)
+        marker_limit.setValue(int(config.get('completion_marker_exempt_chars', 400)))
+        marker_limit.setToolTip(
+            'Denetim açıkken bu sayı kadar veya daha kısa ilk çeviri parçalarında bitiş işareti aranmaz. '
+            'Örneğin 500 seçilirse 500 karakter ve altı işaretsiz kabul edilir; 501 ve üstünde işaret zorunludur.'
+        )
+        marker_limit.setEnabled(marker_enabled.isChecked())
+        marker_enabled.toggled.connect(marker_limit.setEnabled)
+        self.fields['completion_marker_exempt_chars'] = marker_limit
+        layout.addRow('İşaretsiz sınır (karakter)', marker_limit)
         restore = QPushButton('Varsayılan ayarlara dön'); restore.clicked.connect(self.reset_defaults)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
@@ -475,7 +484,7 @@ class MainWindow(QMainWindow):
             value = dialog.value(); validate_config(value); save_json(APP_DIR / 'config.json', value)
             self.model_label.setText(value['model'])
             self.append_log(
-                'Ayarlar kaydedildi. Bitiş işareti ayarları yarım bölüm yeniden sürdürüldüğünde; '
+                'Ayarlar kaydedildi. Bitiş işareti/otomatik tekrar ayarları yarım bölüm yeniden sürdürüldüğünde; '
                 'diğer çalışma ayarları sonraki bölümde uygulanır.'
             )
             self.refresh_model_info()

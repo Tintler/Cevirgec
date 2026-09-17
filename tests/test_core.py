@@ -362,6 +362,39 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(FakeClient.calls, 1)
             self.assertFalse(any('Otomatik yeniden deneme' in line for line in logs))
 
+    def test_analysis_honors_configured_retry_count(self):
+        class FakeClient:
+            calls = 0
+            def __init__(self, cfg, log=print): self.cfg = cfg
+            def context_length(self): return 32768, 'test'
+            def generate(self, system, user, max_tokens, require_marker=True, allow_json_fence=False):
+                FakeClient.calls += 1
+                return json.dumps({'summary': 'Eksik şema.'}, ensure_ascii=False)
+
+        with tempfile.TemporaryDirectory() as temp:
+            book = Path(temp); (book / 'source').mkdir(); (book / 'translation').mkdir()
+            (book / 'source' / '001.md').write_text('Kısa bölüm.', encoding='utf-8')
+            (book / '00-CONTEXT.md').write_text('''# Context
+## Files
+| File | Status |
+|---|---|
+| `001.md` | next |
+''', encoding='utf-8')
+            cfg = dict(DEFAULT_CONFIG); cfg['auto_retry_count'] = 1
+            logs = []
+            with patch('app_core.Client', FakeClient):
+                with self.assertRaisesRegex(ValueError, 'eksik alanlar'):
+                    TranslationEngine(lambda: cfg, log=logs.append).run_analysis(book, ['001.md'])
+            self.assertEqual(FakeClient.calls, 2)
+            self.assertTrue(any('Otomatik yeniden deneme 1/1' in line for line in logs))
+
+    def test_retry_count_cannot_be_disabled_or_set_below_one(self):
+        cfg = dict(DEFAULT_CONFIG); cfg['auto_retry_count'] = 1
+        app_core.validate_config(cfg)
+        cfg['auto_retry_count'] = 0
+        with self.assertRaisesRegex(ValueError, '1 ile 100'):
+            app_core.validate_config(cfg)
+
     def test_import_and_output_epub(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); source = root / 'sample.epub'; work_parent = root / 'work'
@@ -497,6 +530,34 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(FakeClient.part_calls, {1: 1, 2: 4})
             self.assertTrue(final_state['complete'])
             self.assertTrue(any('Otomatik yeniden deneme 2/2' in line for line in logs))
+
+    def test_translation_honors_configured_retry_count(self):
+        class FakeClient:
+            calls = 0
+            def __init__(self, cfg, log=print): self.cfg = cfg
+            def context_length(self): return 32768, 'test'
+            def generate(self, system, user, max_tokens, require_marker=True, allow_json_fence=False):
+                if 'SOURCE TO TRANSLATE' in user:
+                    FakeClient.calls += 1
+                    raise ValueError('Yanit tamamlanma isareti tasimiyor; sonuc kaydedilmedi.')
+                return '- Not.'
+
+        with tempfile.TemporaryDirectory() as temp:
+            book = Path(temp); (book / 'source').mkdir(); (book / 'translation').mkdir()
+            (book / 'source' / '001.md').write_text('# Test\n\n' + ('A' * 450), encoding='utf-8')
+            (book / '00-CONTEXT.md').write_text('''# Context
+## Files
+| File | Status |
+|---|---|
+| `001.md` | next |
+''', encoding='utf-8')
+            cfg = dict(DEFAULT_CONFIG); cfg['auto_retry_count'] = 1
+            logs = []
+            with patch('app_core.Client', FakeClient):
+                with self.assertRaisesRegex(ValueError, 'tamamlanma isareti'):
+                    TranslationEngine(lambda: cfg, log=logs.append).run_file(book, '001.md')
+            self.assertEqual(FakeClient.calls, 2)
+            self.assertTrue(any('Otomatik yeniden deneme 1/1' in line for line in logs))
 
     def test_reset_chapter_backs_up_and_resets(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1345,11 +1406,13 @@ class ReviewFixTests(unittest.TestCase):
                     self.engine(logs).run_file(book, '001.md')
                 self.assertEqual(MarkerClient.flags, [True, True, True])
                 self.cfg['completion_marker_exempt_chars'] = 500
+                self.cfg['auto_retry_count'] = 1
                 MarkerClient.fail = False
                 self.engine(logs).run_file(book, '001.md')
             self.assertEqual(MarkerClient.flags[-1], False)
             state = json.loads((book / '_python_translation' / '001.md' / 'state.json').read_text(encoding='utf-8'))
             self.assertEqual(state['effective_config']['completion_marker_exempt_chars'], 500)
+            self.assertEqual(state['effective_config']['auto_retry_count'], 1)
             self.assertTrue(any('mevcut yarim bolum' in line for line in logs))
 
     # --- G24: Turkce eslesme -------------------------------------------------
@@ -1484,6 +1547,23 @@ class ReviewFixTests(unittest.TestCase):
                 self.engine(logs).run_file(book, '001.md')
             self.assertTrue((book / 'translation' / '001.md').exists())
             self.assertTrue(any('Bolum notu yaniti alinamadi' in line for line in logs))
+
+    def test_notes_and_compression_helper_honors_configured_retry_count(self):
+        class AlwaysFailClient:
+            calls = 0
+            def __init__(self, cfg): self.cfg = cfg
+            def context_length(self): return 32768, 'test'
+            def generate(self, system, user, max_tokens, require_marker=True, allow_json_fence=False):
+                AlwaysFailClient.calls += 1
+                raise RuntimeError('LM Studio baglantisi kurulamadi: test')
+
+        cfg = dict(DEFAULT_CONFIG); cfg['auto_retry_count'] = 1
+        logs = []
+        engine = TranslationEngine(lambda: cfg, log=logs.append)
+        with self.assertRaisesRegex(RuntimeError, 'baglantisi'):
+            engine._generate_retry(AlwaysFailClient(cfg), 'system', 'user', 100, 'Bolum notu')
+        self.assertEqual(AlwaysFailClient.calls, 2)
+        self.assertTrue(any('Otomatik yeniden deneme 1/1' in line for line in logs))
 
     # --- G26: on analiz onerileri kapsami ----------------------------------------
     def test_analysis_terms_keep_scope_and_merge_skips_chapter_terms(self):

@@ -32,6 +32,7 @@ DEFAULT_CONFIG = {
     'notes_max_tokens': 4096,
     'temperature': 0.2,
     'timeout_seconds': 1800,
+    'auto_retry_count': 2,
     'token_estimation_enabled': True,
     'fallback_context_length': 32768,
     'context_safety_tokens': 2048,
@@ -43,9 +44,9 @@ DEFAULT_CONFIG = {
 }
 
 ANALYSIS_VERSION = 2
-ANALYSIS_AUTO_RETRIES = 2
-TRANSLATION_AUTO_RETRIES = 2
-LIVE_MARKER_CONFIG_KEYS = ('completion_marker_enabled', 'completion_marker_exempt_chars')
+LIVE_RESUMABLE_CONFIG_KEYS = (
+    'completion_marker_enabled', 'completion_marker_exempt_chars', 'auto_retry_count',
+)
 # G22: Referans (kitap baglami) context'in bu oranini asinca, yuzde esigi
 # beklenmeden notlar sikistirilir.
 REFERENCE_BUDGET_RATIO = 0.4
@@ -237,6 +238,8 @@ def validate_config(cfg):
     for key in ('chunk_chars', 'max_tokens', 'notes_max_tokens', 'timeout_seconds', 'fallback_context_length'):
         if int(cfg[key]) <= 0:
             raise ValueError(f'{key} sifirdan buyuk olmali.')
+    if not 1 <= int(cfg['auto_retry_count']) <= 100:
+        raise ValueError('auto_retry_count 1 ile 100 arasinda olmali.')
     if not isinstance(cfg['completion_marker_enabled'], bool):
         raise ValueError('completion_marker_enabled true veya false olmali.')
     if not 0 <= int(cfg['completion_marker_exempt_chars']) <= 1000000:
@@ -1179,13 +1182,14 @@ class TranslationEngine:
 
     def _generate_retry(self, client, system, user, max_tokens, label, **kwargs):
         """G27: notlar ve sikistirma icin gecici hatalarda otomatik yeniden deneme."""
-        for attempt in range(TRANSLATION_AUTO_RETRIES + 1):
+        retry_count = int(client.cfg['auto_retry_count'])
+        for attempt in range(retry_count + 1):
             try:
                 return self._generate(client, system, user, max_tokens, **kwargs)
             except (ValueError, RuntimeError) as error:
-                if not retryable_translation_error(error) or attempt >= TRANSLATION_AUTO_RETRIES:
+                if not retryable_translation_error(error) or attempt >= retry_count:
                     raise
-                self.log(f'{label} yaniti alinamadi: {error} Otomatik yeniden deneme {attempt + 1}/{TRANSLATION_AUTO_RETRIES}...')
+                self.log(f'{label} yaniti alinamadi: {error} Otomatik yeniden deneme {attempt + 1}/{retry_count}...')
                 self.controller.checkpoint()
 
     def _budget_check(self, cfg, client, system, user, max_tokens):
@@ -1281,7 +1285,8 @@ class TranslationEngine:
                     # Some models omit artificial trailing markers even after returning
                     # valid JSON; normal translation output keeps the stricter marker.
                     retry_reason = None  # 'schema' | 'connection' - son retry'in sebebi
-                    for attempt in range(ANALYSIS_AUTO_RETRIES + 1):
+                    retry_count = int(cfg['auto_retry_count'])
+                    for attempt in range(retry_count + 1):
                         if retry_reason == 'schema':
                             retry_notice = ('\n\nRETRY NOTICE: The previous response failed validation. '
                                             'Return one complete JSON object with every required field and no commentary.')
@@ -1298,21 +1303,21 @@ class TranslationEngine:
                             break
                         except ValueError as error:
                             retryable = str(error).startswith(ANALYSIS_RESPONSE_ERROR_PREFIXES)
-                            if not retryable or attempt >= ANALYSIS_AUTO_RETRIES:
+                            if not retryable or attempt >= retry_count:
                                 raise
                             retry_reason = 'schema'
                             self.log(
                                 f'On analiz yaniti dogrulanamadi: {error} '
-                                f'Otomatik yeniden deneme {attempt + 1}/{ANALYSIS_AUTO_RETRIES}...'
+                                f'Otomatik yeniden deneme {attempt + 1}/{retry_count}...'
                             )
                             self.controller.checkpoint()
                         except RuntimeError as error:
-                            if not retryable_translation_error(error) or attempt >= ANALYSIS_AUTO_RETRIES:
+                            if not retryable_translation_error(error) or attempt >= retry_count:
                                 raise
                             retry_reason = 'connection'
                             self.log(
                                 f'On analiz baglanti hatasi: {error} '
-                                f'Otomatik yeniden deneme {attempt + 1}/{ANALYSIS_AUTO_RETRIES}...'
+                                f'Otomatik yeniden deneme {attempt + 1}/{retry_count}...'
                             )
                             self.controller.checkpoint()
                     state['parts'].append(result); save_json(state_path, state)
@@ -1387,10 +1392,10 @@ class TranslationEngine:
         if existing and 'effective_config' in existing:
             try:
                 cfg = dict(existing['effective_config'])
-                # G38 oncesi checkpointlerde bu iki alan yoktur. Yalnizca yeni
-                # alanlari geriye uyumlu doldur; diger eksik checkpoint alanlari
-                # hata olmaya devam etsin.
-                for key in LIVE_MARKER_CONFIG_KEYS:
+                # Eski checkpointlerde sonradan eklenen canli ayarlar yoktur.
+                # Yalnizca bu alanlari geriye uyumlu doldur; diger eksik
+                # checkpoint alanlari hata olmaya devam etsin.
+                for key in LIVE_RESUMABLE_CONFIG_KEYS:
                     cfg.setdefault(key, DEFAULT_CONFIG[key])
                 validate_config(cfg)  # eksik/yanlis tip alan -> KeyError/TypeError
             except (KeyError, TypeError):
@@ -1400,11 +1405,11 @@ class TranslationEngine:
                 ) from None
         if cfg is None:
             cfg = live_cfg
-        elif any(cfg[key] != live_cfg[key] for key in LIVE_MARKER_CONFIG_KEYS):
-            for key in LIVE_MARKER_CONFIG_KEYS:
+        elif any(cfg[key] != live_cfg[key] for key in LIVE_RESUMABLE_CONFIG_KEYS):
+            for key in LIVE_RESUMABLE_CONFIG_KEYS:
                 cfg[key] = live_cfg[key]
             validate_config(cfg)
-            self.log('Bitis isareti ayarlari mevcut yarim bolum icin guncellendi.')
+            self.log('Bitis isareti/otomatik tekrar ayarlari mevcut yarim bolum icin guncellendi.')
         client = Client(cfg, self.log)
         glossary = existing.get('glossary', []) if existing and 'glossary' in existing else load_glossary(book)
         chunks = split_source(source, int(cfg['chunk_chars']))
@@ -1421,7 +1426,7 @@ class TranslationEngine:
         state = existing or {'signature': signature, 'effective_config': cfg, 'glossary': glossary, 'context_before': context,
                              'reference': book_data(book, context, filename, recheck=recheck), 'parts': [], 'notes': None}
         if existing:
-            state.setdefault('effective_config', {}).update({key: cfg[key] for key in LIVE_MARKER_CONFIG_KEYS})
+            state.setdefault('effective_config', {}).update({key: cfg[key] for key in LIVE_RESUMABLE_CONFIG_KEYS})
         if recheck and not existing:
             (work / 'recheck.json').unlink(missing_ok=True)
         if state['signature'] != signature:
@@ -1456,7 +1461,8 @@ class TranslationEngine:
                     reason = 'bitis isareti denetimi kapali'
                 self.log(f'Parca {len(chunks[index].strip())} karakter ({reason}): '
                          'cikti ve EPUB yapi denetimleri kullaniliyor.')
-            for attempt in range(TRANSLATION_AUTO_RETRIES + 1):
+            retry_count = int(cfg['auto_retry_count'])
+            for attempt in range(retry_count + 1):
                 retry_system = (system if attempt == 0 else system +
                     '\nA previous response for this same source fragment failed validation. '
                     'Translate the complete fragment again from the beginning and obey every output and glossary rule.')
@@ -1470,11 +1476,11 @@ class TranslationEngine:
                     validate_translation_structure(chunks[index], translated)
                     break
                 except (ValueError, RuntimeError) as error:
-                    if not retryable_translation_error(error) or attempt >= TRANSLATION_AUTO_RETRIES:
+                    if not retryable_translation_error(error) or attempt >= retry_count:
                         raise
                     self.log(
                         f'Ceviri yaniti dogrulanamadi: {error} '
-                        f'Otomatik yeniden deneme {attempt + 1}/{TRANSLATION_AUTO_RETRIES}...'
+                        f'Otomatik yeniden deneme {attempt + 1}/{retry_count}...'
                     )
                     self.controller.checkpoint()
             state['parts'].append(translated)

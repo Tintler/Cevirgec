@@ -23,7 +23,7 @@
 - Kullanıcının dahil edilecek bölümleri seçtiği isteğe bağlı ön analiz
 - Kitap geneli sabit bilgiler ile bölüm özelindeki bilgileri ayrı tutma
 - Parça bazlı çeviri, atomik kontrol noktaları ve yarıda kalan projeyi sürdürme
-- Geçici model/API hatalarında aynı parçayı en fazla iki kez otomatik yeniden deneme
+- Geçici model/API hatalarında ayarlanabilir sayıda otomatik yeniden deneme
 - Gerçek zamanlı durum, konsol, token kullanımı ve dosyaya yazılan kayıtlar
 - Güvenli duraklatma: mevcut API isteği ve kayıt işlemi bittikten sonra bekleme
 - Güvenli kapanış: devam eden istek tamamlanmadan uygulamayı zorla kapatmama
@@ -132,18 +132,17 @@ Analiz bilgileri iki katmana ayrılır:
 
 Tam olay özeti doğrudan her çeviri isteğine eklenmez. Böylece modelin sonraki bölüme önceki bölümün tüm metnini taşıması veya bölüm özelindeki bir üslubu bütün kitaba yanlışlıkla yayması önlenir. Kitap geneline taşınacak bir kararın birden fazla bölümde tutarlı biçimde doğrulanması gerekir.
 
-Analiz çıktıları `BOOK-ANALYSIS.md` ve `_python_analysis` altında saklanır. Yapısal olarak geçersiz bir analiz yanıtı en fazla iki kez yeniden denenir; üç deneme de başarısızsa sonuç kaydedilmez ve kullanıcıya hata gösterilir.
+Analiz çıktıları `BOOK-ANALYSIS.md` ve `_python_analysis` altında saklanır. Yapısal olarak geçersiz bir analiz yanıtı, **Otomatik tekrar sayısı** ayarına göre yeniden denenir; bütün denemeler başarısızsa sonuç kaydedilmez ve kullanıcıya hata gösterilir.
 
 ## Çeviri, kontrol noktaları ve yeniden deneme
 
 Her bölüm karakter sayısına göre parçalara ayrılır. Bir parça başarıyla çevrildiğinde atomik olarak kaydedilir; program kapanırsa sonraki çalıştırmada tamamlanan parçalar yeniden üretilmez.
 
-Aşağıdaki geçici sorunlarda aynı parça otomatik olarak en fazla iki kez daha denenir; toplam deneme sayısı üçtür:
+Aşağıdaki geçici sorunlarda istek **Otomatik tekrar sayısı** kadar yeniden denenir. Varsayılan değer `2` olduğu için ilk istekle birlikte toplam en fazla üç istek yapılır. Ayarın minimum değeri `1`'dir ve kapatma seçeneği yoktur:
 
 - Eksik tamamlanma işareti
 - Boş veya biçimsel olarak geçersiz model yanıtı
 - Yanıta karışan araç/düşünme metni
-- Zorunlu sözlük karşılığının kullanılmaması
 - Kaynak görsel, iç bağlantı veya çapa hedefinin model tarafından silinmesi/değiştirilmesi
 - Geçici bağlantı ve timeout sorunları
 - HTTP 408, 429 veya 5xx yanıtları
@@ -175,6 +174,7 @@ Ayarlar gelişmiş/deneysel seçeneklerdir. Emin değilseniz varsayılan değerl
 | Kitap ve EPUB | EPUBCheck | Üretilen EPUB üzerinde harici EPUBCheck doğrulamasını açar |
 | Kitap ve EPUB | EPUBCheck yolu | `epubcheck.jar`, yürütülebilir dosya yolu veya boş bırakılırsa PATH içindeki `epubcheck` |
 | Kitap ve EPUB | Katı sözlük | Açıksa uygulanamayan zorunlu terimde çeviri durur; kapalıyken (varsayılan) kayıt `glossary_fixes.log` dosyasına yazılır ve çeviri devam eder |
+| Kitap ve EPUB | Otomatik tekrar sayısı | Varsayılan `2`, minimum `1`. İlk isteğe dahil olmayan ek deneme sayısıdır; ön analiz, çeviri, bölüm notları ve bağlam sıkıştırmada ortak kullanılır |
 | LM Studio ve model | Base URL | LM Studio yerel API adresi |
 | LM Studio ve model | Model | LM Studio'da yüklü modeller arasından seçim |
 | LM Studio ve model | Temperature | Modelin üretim çeşitliliği; istekle LM Studio'ya gönderilir |
@@ -188,7 +188,7 @@ Ayarlar gelişmiş/deneysel seçeneklerdir. Emin değilseniz varsayılan değerl
 | LM Studio ve model | Bitiş işareti denetimi | Varsayılan açık. Kapatılırsa hiçbir çeviri veya glossary düzeltme yanıtında yapay bitiş işareti aranmaz; diğer çıktı ve EPUB kontrolleri sürer |
 | LM Studio ve model | İşaretsiz sınır | Varsayılan `400`. Denetim açıkken bu uzunluğa kadar olan ilk çeviri parçaları işaretsiz kabul edilir; örneğin `500` seçilirse sınır `500` olur |
 
-Parça boyutu veya ilgili çalışma ayarları çeviri sırasında değiştirilirse mevcut bölüm eski ayarlarla tamamlanır; yeni değerler sonraki bölümde devreye girer. Bitiş işareti denetimi ve işaretsiz sınır bunun istisnasıdır: başarısız veya yarım bölüm yeniden sürdürüldüğünde ilk kaydedilmemiş parçadan itibaren güncel değerler uygulanır. Kaydedilmiş parçalar değiştirilmez.
+Parça boyutu veya ilgili çalışma ayarları çeviri sırasında değiştirilirse mevcut bölüm eski ayarlarla tamamlanır; yeni değerler sonraki bölümde devreye girer. Bitiş işareti denetimi, işaretsiz sınır ve otomatik tekrar sayısı bunun istisnasıdır: başarısız veya yarım bölüm yeniden sürdürüldüğünde ilk kaydedilmemiş parçadan itibaren güncel değerler uygulanır. Kaydedilmiş parçalar değiştirilmez.
 
 ## EPUB içe aktarma ve çıktı
 
@@ -338,7 +338,7 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 | Bağlantı reddedildi | Base URL'yi ve LM Studio portunu kontrol edin |
 | Context yetersiz | Parça boyutunu veya çıktı token payını azaltın; doğru yüklü modelin seçildiğini doğrulayın |
 | Yanıt tamamlanmadı | Otomatik denemeleri bekleyin; sürerse **İşaretsiz sınır** değerini yükseltin veya **Bitiş işareti denetimi**ni kapatın. Denetimi kapatmak eksik metin riskini artırır; boş/bozuk çıktı, token sınırı ve EPUB yapısı yine denetlenir |
-| Ön analiz JSON hatası | İki otomatik yeniden deneme yapılır; sürerse modeli/temperature değerini kontrol edin |
+| Ön analiz JSON hatası | Ayarlanan otomatik tekrarlar tamamlandıktan sonra sürüyorsa modeli/temperature değerini kontrol edin |
 | Sözlük karşılığı eksik | `glossary_fixes.log` dosyasındaki parçaları kontrol edin; terim Türkçe çekimli (kitabı, ağacın, Işıkları) geçiyorsa kabul edilir, farklı sözcük seçilmişse o bölümü sağ tıkla yeniden çevirin veya daha güçlü model deneyin |
 | Proje uyuşmazlığı | Kaynak, prompt, sözlük veya checkpoint dosyalarını çalışma sırasında elle değiştirmeyin |
 | Görseller eski projede bozuk | Eski içe aktarma biçimindeki proje yerine kaynak EPUB'dan yeni proje oluşturun |
@@ -348,6 +348,32 @@ Testler LM Studio'da gerçek bir kitabın tamamını çevirmek yerine ayrıştı
 | DRM/şifreleme hatası | DRM'siz ve kullanma hakkına sahip olduğunuz bir EPUB kullanın |
 
 Daha ayrıntılı kullanım notları için [KULLANIM.md](KULLANIM.md) dosyasına bakın.
+
+## GitHub'a yükleme
+
+Kaynak kodu GitHub'a göndermeden önce `.gitignore` dosyasını koruyun. Bu dosya üretilmiş `.exe`, çalışma klasörleri, EPUB kitapları, loglar, sanal ortamlar ve Python önbelleklerinin yanlışlıkla depoya eklenmesini engeller.
+
+GitHub'da boş bir `Cevirgec` deposu oluşturun. Mevcut yerel proje gönderileceği için oluşturma ekranında README, `.gitignore` ve lisans ekleme seçeneklerini işaretlememek en kolay yoldur. Ardından proje klasöründe:
+
+```bat
+git init
+git add .
+git status
+git commit -m "İlk Çevirgeç sürümü"
+git branch -M main
+git remote add origin https://github.com/KULLANICI_ADIN/Cevirgec.git
+git push -u origin main
+```
+
+`KULLANICI_ADIN` bölümünü GitHub kullanıcı adınızla değiştirin. Sonraki güncellemelerde:
+
+```bat
+git add .
+git commit -m "Değişiklikleri açıkla"
+git push
+```
+
+Kullanıcıların hazır uygulamayı indirebilmesi için `dist` klasörünü kaynak depoya commit etmeyin. Bunun yerine `Cevirgec.exe`, `config.json` ve `translation_prompt.txt` dosyalarını birlikte ZIP'leyin; GitHub'da **Releases → Draft a new release** üzerinden örneğin `v1.0.0` etiketiyle bu ZIP'i sürüm varlığı olarak ekleyin. İlk commit'ten önce `LICENSE` dosyasındaki telif satırını kendi adınızla güncellemek isterseniz `LICENSE`'in ilk satırını düzenleyin.
 
 ## Lisans
 

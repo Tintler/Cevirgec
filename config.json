@@ -6,6 +6,7 @@
   "notes_max_tokens": 4096,
   "temperature": 0.2,
   "timeout_seconds": 1800,
+  "auto_retry_count": 2,
   "token_estimation_enabled": true,
   "fallback_context_length": 32768,
   "context_safety_tokens": 2048,
