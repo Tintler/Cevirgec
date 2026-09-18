@@ -1,4 +1,9 @@
-# Çevirgeç
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo-light.svg" alt="Çevirgeç" width="250">
+  </picture>
+</div>
 
 ![Çevirgeç arayüzü](ONIZLEME.png)
 
