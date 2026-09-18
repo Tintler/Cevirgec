@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="250" height="64" viewBox="0 0 250 64">
+  <g transform="translate(2,4) scale(0.56)">
+    <rect width="100" height="100" rx="22" fill="#1b1b1f"/>
+    <g transform="skewX(-12) translate(15,0)">
+      <g fill="#f0b429">
+        <path d="M18 18 L56 18 L56 40 L18 40 Z"/>
+        <path d="M56 12 L56 46 L80 29 Z"/>
+        <rect x="18" y="18" width="24" height="64"/>
+        <path d="M18 60 L58 60 L70 82 L18 82 Z"/>
+      </g>
+      <rect x="36" y="65" width="12" height="12" rx="3" fill="#1b1b1f"/>
+    </g>
+  </g>
+  <text x="70" y="43" font-family="'Segoe UI',system-ui,-apple-system,sans-serif"
+        font-size="34" font-weight="700" fill="#e6e9ef">Çevir<tspan fill="#f0b429">geç</tspan></text>
+</svg>
