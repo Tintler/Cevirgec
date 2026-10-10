@@ -18,6 +18,40 @@ from engines.protocol import Engine, data_dir, serve
 VOICE_URL = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/{path}{extension}?download=true'
 
 
+def espeak_data_dir():
+    """espeak-ng (C library inside Piper) cannot open non-ASCII paths such as "...\\yapılan programlar\\..."
+    and then silently falls back to the path it was built with. Give it an ASCII path: the folder's
+    8.3 short name if that is ASCII, otherwise a one-time copy under ProgramData (or the temp folder)."""
+    from piper.phonemize_espeak import ESPEAK_DATA_DIR
+    source = str(ESPEAK_DATA_DIR)
+    if source.isascii():
+        return source
+    if os.name == 'nt':
+        import ctypes
+        buffer = ctypes.create_unicode_buffer(32768)
+        if ctypes.windll.kernel32.GetShortPathNameW(source, buffer, len(buffer)) and buffer.value.isascii():
+            return buffer.value
+    import shutil
+    import tempfile
+    marker_text = manifest().get('version', '')
+    for base in (os.environ.get('ProgramData'), tempfile.gettempdir(), os.environ.get('PUBLIC')):
+        if not base or not base.isascii():
+            continue
+        target = os.path.join(base, 'Cevirgec', 'espeak-ng-data')
+        marker = os.path.join(target, '.cevirgec-surum')
+        try:
+            if not (os.path.exists(marker) and open(marker, encoding='utf-8').read() == marker_text):
+                shutil.rmtree(target, ignore_errors=True)
+                shutil.copytree(source, target)
+                with open(marker, 'w', encoding='utf-8') as stream:
+                    stream.write(marker_text)
+            return target
+        except OSError:
+            continue
+    raise RuntimeError('Piper için Türkçe karakter içermeyen bir klasör bulunamadı. Çevirgeç\'i yolu yalnızca '
+                       'İngilizce harflerden oluşan bir klasöre (örneğin C:\\Cevirgec) taşıyın.')
+
+
 def manifest():
     base = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
     with open(os.path.join(base, 'motor.json'), encoding='utf-8') as stream:
@@ -63,7 +97,7 @@ class PiperEngine(Engine):
             self._download(self.catalog[voice_id], folder)
         self.stage('Piper yükleniyor…')
         from piper import PiperVoice
-        self.voice = PiperVoice.load(model)
+        self.voice = PiperVoice.load(model, espeak_data_dir=espeak_data_dir())
         self.voice_id = voice_id
         self.say('Merhaba.', 1.0, 0)
         return {'device': 'cpu', 'voice': voice_id}

@@ -86,6 +86,8 @@ def cuda_torch():
 
 
 def main():
+    # Turkish messages must not crash a cp1252 console or a redirected log.
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     wanted = set(sys.argv[1:])
     if (not wanted or 'ema' in wanted) and not cuda_torch():
         print('UYARI: Bu Python ortamındaki PyTorch CUDA desteklemiyor; EMA paketi yalnızca CPU ile çalışır. '

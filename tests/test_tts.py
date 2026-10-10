@@ -1,4 +1,5 @@
 import base64
+import importlib.util
 import io
 import json
 from pathlib import Path
@@ -200,6 +201,34 @@ class EnginesTests(unittest.TestCase):
         self.assertEqual([p.name for p in root.iterdir()], [])            # no half-extracted staging folder
         self.assertIsNone({item['id']: item for item in self.engines.engines()}.get('paket'))
         self.assertEqual(self.engines._busy, {})
+
+
+@unittest.skipUnless(importlib.util.find_spec('piper'), 'piper-tts kurulu değil')
+class PiperEspeakPathTests(unittest.TestCase):
+    """espeak-ng cannot open non-ASCII paths (e.g. "...\\yapılan programlar\\...")."""
+
+    def test_non_ascii_espeak_folder_gets_an_ascii_copy(self):
+        import ctypes
+        import piper.phonemize_espeak as phonemize
+        import engines.piper.worker as worker
+
+        class NoShortNames:
+            def GetShortPathNameW(self, *_):
+                return 0
+
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / 'yapılan' / 'espeak-ng-data'
+            shutil.copytree(phonemize.ESPEAK_DATA_DIR, source)
+            program_data = Path(temp) / 'ProgramData'
+            with patch.object(phonemize, 'ESPEAK_DATA_DIR', source), \
+                    patch.dict('os.environ', {'ProgramData': str(program_data)}), \
+                    patch.object(ctypes, 'windll', type('W', (), {'kernel32': NoShortNames()})(), create=True):
+                target = worker.espeak_data_dir()
+                self.assertTrue(target.isascii())
+                self.assertTrue((Path(target) / 'phontab').exists())
+                self.assertEqual(worker.espeak_data_dir(), target)       # copied once, reused
+            with patch.object(phonemize, 'ESPEAK_DATA_DIR', Path(temp)):
+                self.assertEqual(worker.espeak_data_dir(), temp)         # ASCII paths are used as they are
 
 
 class Dialogs:
