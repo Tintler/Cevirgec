@@ -49,7 +49,10 @@ class SpeakerTests(unittest.TestCase):
             speaker.say('Merhaba.')
         speaker.load('cpu')
         self.assertTrue(wait_for(lambda: speaker.state == 'ready'))
-        self.assertEqual([data['state'] for _event, data in events], ['loading', 'ready'])
+        states = [(data['state'], data['message']) for _event, data in events]
+        self.assertEqual(states[0][0], 'loading')
+        self.assertIn(('loading', 'Isınıyor…'), states)
+        self.assertEqual(states[-1], ('ready', 'Hazır'))
         self.assertEqual(speaker._model.calls[0][2], PLAY_RATE)          # warm-up call
         result = speaker.say('  Merhaba,\n dünya.  ', speed=1.5)
         self.assertEqual(speaker._model.calls[-1][:2], ('Merhaba, dünya.', 1.5))

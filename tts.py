@@ -83,8 +83,16 @@ class Speaker:
 
     _requested = None
 
-    def _stage(self, message, started):
-        print(f'[sesli okuma] {time.perf_counter() - started:6.1f} sn  {message}', flush=True)
+    @staticmethod
+    def _console(message, started):
+        # ASCII only, and never fatal: the console may be cp1252 or missing (windowed exe).
+        try:
+            print(f'[sesli okuma] {time.perf_counter() - started:6.1f} s  {message}', flush=True)
+        except Exception:
+            pass
+
+    def _stage(self, message, console, started):
+        self._console(console, started)
         self._set('loading', message)
 
     def _load(self, device):
@@ -94,26 +102,30 @@ class Speaker:
                 model = self._factory(device)
             else:
                 os.environ.setdefault('HF_HUB_DISABLE_SYMLINKS_WARNING', '1')
-                self._stage('PyTorch yükleniyor…', started)
+                self._stage('PyTorch yükleniyor…', 'PyTorch yukleniyor', started)
                 import torch
                 from ema_lightning import EMA
                 if device == 'cuda' and not torch.cuda.is_available():
                     raise RuntimeError('NVIDIA ekran kartı (CUDA) bulunamadı. Ayarlardan "Otomatik" veya "CPU" seçin '
                                        'ya da PyTorch\'un CUDA sürümünü kurun.')
-                self._stage('Model dosyaları alınıyor ve yükleniyor…', started)
+                self._stage('Model dosyaları alınıyor ve yükleniyor…', 'model dosyalari aliniyor ve yukleniyor', started)
                 model = EMA(device=device)
                 # lightning() (torch.compile + CUDA graphs for every shape) is skipped on purpose: it can take
                 # minutes or stall on Windows, and the plain GPU/CPU path is already far faster than real time.
                 # A fixed small batch also skips the throughput benchmark; reading needs at most a few at once.
                 model._batch_size = BATCH_SIZE
-            self._stage('Isınıyor…', started)
+            self._stage('Isınıyor…', 'isiniyor', started)
             model.say(WARMUP, sample_rate=PLAY_RATE, seed=0)
             self._model = model
             self._device = str(getattr(model, 'device', device))
-            print(f'[sesli okuma] {time.perf_counter() - started:6.1f} sn  Hazır ({self._device})', flush=True)
+            self._console(f'hazir ({self._device})', started)
             self._set('ready', 'Hazır')
         except Exception as error:
-            traceback.print_exc()
+            self._console(f'HATA: {type(error).__name__}: {error!r}'.encode('ascii', 'replace').decode(), started)
+            try:
+                traceback.print_exc()
+            except Exception:
+                pass
             self._set('error', f'Ses modeli yüklenemedi: {error}')
 
     def _ready_model(self):
