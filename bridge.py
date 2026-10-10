@@ -698,6 +698,10 @@ class Bridge:
         except Exception as error:
             return _error(error)
 
+    def tts_choose_reference(self):
+        """Audio file to clone a voice from (path only; it is read by the engine)."""
+        return self._dialogs.open_file('Ses kaydı seç', ('Ses kaydı (*.wav;*.mp3;*.flac;*.ogg;*.m4a)',)) if self._dialogs else None
+
     def tts_install_file(self):
         """Installs an engine package chosen from disk (zip)."""
         path = self._dialogs.open_file('Ses motoru paketi seç', ('Ses motoru paketi (*.zip)',)) if self._dialogs else None

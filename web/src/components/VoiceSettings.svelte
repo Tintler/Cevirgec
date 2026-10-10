@@ -32,6 +32,28 @@
     saveTtsPrefs();
   }
 
+  // Settings of the chosen voice (motor.json "options"): voice description, reference recording…
+  function voiceOf(value) {
+    const [engineId, voiceId] = value.split('/');
+    return usable.find((e) => e.id === engineId)?.voices.find((v) => v.id === voiceId) ?? null;
+  }
+
+  function optionValue(value, option) {
+    return app.ttsPrefs.options?.[value]?.[option.key] ?? option.default ?? '';
+  }
+
+  function setOption(value, key, text) {
+    const all = { ...(app.ttsPrefs.options ?? {}) };
+    all[value] = { ...(all[value] ?? {}), [key]: text };
+    app.ttsPrefs.options = all;
+    saveTtsPrefs();
+  }
+
+  async function pickReference(value, key) {
+    const path = await call('tts_choose_reference');
+    if (path) setOption(value, key, path);
+  }
+
   function setDevice(value) {
     app.ttsPrefs.device = value;
     saveTtsPrefs();
@@ -109,6 +131,19 @@
         </select>
       {/if}
     </div>
+    {@const value = selected(language)}
+    {#each voiceOf(value)?.options ?? [] as option (value + option.key)}
+      <div class="fr sub">
+        <div class="l">{option.label}{#if option.hint}<small>{option.hint}</small>{/if}</div>
+        {#if option.type === 'file'}
+          <span class="path selectable" title={optionValue(value, option)}>{optionValue(value, option) || 'Seçilmedi'}</span>
+          <button class="btn sm" onclick={() => pickReference(value, option.key)}>Seç…</button>
+        {:else}
+          <input class="field w" value={optionValue(value, option)} placeholder={option.default ?? ''}
+            onchange={(e) => setOption(value, option.key, e.currentTarget.value.trim())} />
+        {/if}
+      </div>
+    {/each}
   {/each}
 
   <div class="fr">
@@ -139,6 +174,8 @@
   .l small { display: block; color: var(--secondary); font-size: 12px; }
   .l small.dim { color: var(--dim); }
   .info code { font-family: var(--mono); }
+  .sub { padding-left: 16px; border-top-style: dashed; }
+  .path { max-width: 260px; font-size: 12px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
   .ver { color: var(--dim); font-size: 12px; margin-left: 4px; }
   .field.w { width: 320px; }
   .info, .warn { display: flex; gap: 8px; align-items: center; font-size: 12px; padding: 8px 12px; border-radius: 8px; margin: 4px 0 8px; }

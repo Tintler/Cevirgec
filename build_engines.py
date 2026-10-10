@@ -23,6 +23,15 @@ DIST = ROOT / 'dist-engines'
 # Extra PyInstaller options per engine folder: data files and native libraries the analysis misses.
 OPTIONS = {
     'ema': ['--collect-all', 'ema_lightning', '--collect-all', 'normalizer_tr', '--collect-data', 'huggingface_hub'],
+    # voxcpm pulls in gradio/funasr/modelscope/datasets for its demo and training; reading needs none of them.
+    'voxcpm': ['--collect-all', 'voxcpm', '--collect-all', 'normalizer_tr', '--collect-data', 'librosa',
+               '--collect-data', 'huggingface_hub', '--collect-data', 'transformers', '--copy-metadata', 'transformers',
+               '--copy-metadata', 'tokenizers', '--copy-metadata', 'huggingface_hub', '--copy-metadata', 'safetensors',
+               '--copy-metadata', 'torch', '--copy-metadata', 'numpy', '--copy-metadata', 'tqdm', '--copy-metadata', 'regex',
+               '--copy-metadata', 'packaging', '--copy-metadata', 'filelock', '--copy-metadata', 'pyyaml',
+               '--exclude-module', 'gradio', '--exclude-module', 'funasr', '--exclude-module', 'modelscope',
+               '--exclude-module', 'datasets', '--exclude-module', 'spaces', '--exclude-module', 'uvicorn',
+               '--exclude-module', 'fastapi', '--exclude-module', 'voxcpm.training', '--exclude-module', 'tensorboardX'],
 }
 EXCLUDE = ['PySide6', 'webview', 'tkinter', 'matplotlib', 'IPython', 'pytest']
 

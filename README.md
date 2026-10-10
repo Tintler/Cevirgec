@@ -26,7 +26,7 @@
 - Ayarlanabilir otomatik yeniden deneme ve context/token ön kontrolü
 - Dahili EPUB doğrulaması ve isteğe bağlı EPUBCheck
 - Okuma sekmesi: kendi EPUB kitaplığınız, kaldığı yerden devam, yer imleri, yazı/sayfa ayarları
-- Tak-çıkar ses motorlarıyla çevrimdışı sesli okuma: Türkçe için [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning); ses seçimi, cümle vurgulama, hız, bölümü WAV olarak kaydetme. Motor paketleri yerelde `BUILD_TTS.cmd` ile oluşturulup Ayarlar'dan kurulur.
+- Tak-çıkar ses motorlarıyla çevrimdışı sesli okuma: Türkçe için [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) ve doğal anlatım için [Trendyol-TTS](https://huggingface.co/Trendyol/Trendyol-TTS) / [VoxCPM2](https://huggingface.co/openbmb/VoxCPM2) (ses tasarımı ve klonlama); ses seçimi, cümle vurgulama, hız, bölümü WAV olarak kaydetme. Motor paketleri yerelde `BUILD_TTS.cmd` ile oluşturulup Ayarlar'dan kurulur.
 - Windows için tek dosyalı `.exe` derleme komut dosyası
 
 ## Gereksinimler

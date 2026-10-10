@@ -19,7 +19,7 @@ export const app = $state({
   // Read aloud: model status from tts.py, export progress and preferences.
   tts: { state: 'idle', message: '', device: null, exporting: false },
   ttsExport: null,
-  ttsPrefs: { device: 'auto', speed: 1, voices: {} },
+  ttsPrefs: { device: 'auto', speed: 1, voices: {}, options: {} },
   engines: [],
 });
 
@@ -92,7 +92,7 @@ export async function init() {
     else toast(`Ses kaydedildi (${data.count} cümle): ${data.path}`, 'ok');
   });
   const prefs = await call('ui_prefs');
-  app.ttsPrefs = { device: 'auto', speed: 1, voices: {}, ...(prefs?.tts ?? {}) };
+  app.ttsPrefs = { device: 'auto', speed: 1, voices: {}, options: {}, ...(prefs?.tts ?? {}) };
   on('tts_engines', ({ engines, done, error }) => {
     app.engines = engines;
     if (done) toast(done, 'ok');

@@ -149,7 +149,8 @@ Okuyucu, açık kitabı yerel bir **ses motoruyla** sesli okuyabilir; metin bilg
 
 | Motor | Diller | Not |
 |---|---|---|
-| [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) | Türkçe | Çok doğal Türkçe; NVIDIA ekran kartında çok hızlı. Model (~34 MB) ilk kullanımda Hugging Face'ten iner. Apache-2.0. |
+| [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) | Türkçe | Küçük ve çok hızlı; CPU'da da gerçek zamandan hızlı. Model (~34 MB) ilk kullanımda Hugging Face'ten iner. Apache-2.0. |
+| VoxCPM: [Trendyol-TTS](https://huggingface.co/Trendyol/Trendyol-TTS) ve [VoxCPM2](https://huggingface.co/openbmb/VoxCPM2) | Türkçe | En doğal anlatım. NVIDIA ekran kartı önerilir (~8 GB bellek); model ilk kullanımda ~5 GB iner. Üç ses: Trendyol-TTS anlatıcısı, tarifle tasarlanan ses, kayıttan klonlanan ses. MIT / Apache-2.0. |
 
 Motor paketleri yayımlanmaz ve uygulama hiçbir paketi kendisi indirmez: paketleri kendi bilgisayarınızda oluşturup Ayarlar'dan kurarsınız. Model ve ses dosyaları ilk kullanımda kendi resmi kaynaklarından indirilir.
 
@@ -162,7 +163,7 @@ Motor paketleri yayımlanmaz ve uygulama hiçbir paketi kendisi indirmez: paketl
    py -3 -m pip install -r requirements-tts.txt
    ```
 
-2. Proje klasöründe `BUILD_TTS.cmd` çalıştırın (tek motor için `BUILD_TTS.cmd ema`). Paketler `dist-engines\cevirgec-ses-<motor>-win64.zip` olarak oluşur. EMA paketi, ortamdaki PyTorch ile paketlenir: CUDA'lı PyTorch ile birkaç GB olur ve ekran kartını kullanır; CUDA'sız PyTorch ile derlenirse yalnızca CPU ile çalışır (betik bu durumda uyarır).
+2. Proje klasöründe `BUILD_TTS.cmd` çalıştırın (tek motor için `BUILD_TTS.cmd ema` ya da `BUILD_TTS.cmd voxcpm`). Paketler `dist-engines\cevirgec-ses-<motor>-win64.zip` olarak oluşur. EMA paketi, ortamdaki PyTorch ile paketlenir: CUDA'lı PyTorch ile birkaç GB olur ve ekran kartını kullanır; CUDA'sız PyTorch ile derlenirse yalnızca CPU ile çalışır (betik bu durumda uyarır).
 3. Çevirgeç'te **Ayarlar → Sesli okuma → Dosyadan kur** ile zip'i seçin. Paket programın klasöründe `ses-motorlari\<motor>\` altına açılır. Aynı motoru yeniden kurmak (güncellemek) indirilmiş modelleri ve sesleri korur; **Kaldır** motoru ve dosyalarını siler.
 
 Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurulamaz; klasör yolu çok uzunsa (Windows 260 karakter sınırı) kurulum anlaşılır bir mesajla reddedilir. Bu durumlarda Çevirgeç'i kısa ve yazılabilir bir klasöre (ör. `C:\Cevirgec`) taşıyın.
@@ -172,6 +173,14 @@ Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurula
 ### Ses seçimi
 
 **Ayarlar → Sesli okuma → Ses** ile kitapları hangi motorun okuyacağı seçilir. Kurulu motorlar yalnızca Türkçe okur. Seçim yapılmazsa Türkçe için EMA, diğer diller için o dili destekleyen ilk motor kullanılır. Kitabın dili EPUB'daki `dc:language` bilgisinden alınır; bilgi yoksa Türkçe varsayılır. Kurulu motorlarda o dil yoksa okuyucu bunu söyler ve Ayarlar'a yönlendirir.
+
+### VoxCPM sesleri
+
+- **Trendyol-TTS (Türkçe anlatıcı):** Türkçe için ince ayar yapılmış, en doğal seçenek.
+- **Tarifle tasarlanan ses:** Ayarlar'daki **Ses tarifi** alanına anlatıcıyı yazın (ör. `A calm, warm middle-aged male narrator reading an audiobook`; İngilizce tarif daha iyi sonuç verebilir). Ses ilk seferde bir kez oluşturulup saklanır ve her cümle ondan üretilir; böylece anlatıcı kitap boyunca değişmez. Tarifi değiştirmek yeni bir ses oluşturur.
+- **Kayıttan klonlanan ses:** **Ses kaydı** ile hakkına sahip olduğunuz 5-30 saniyelik temiz bir konuşma kaydı seçin; **Kaydın metni** verilirse benzerlik artar. Başkalarının seslerini (ör. ticari uygulamaların anlatıcıları) izinsiz klonlamayın.
+
+Sayılar, tarihler, saatler ve kısaltmalar okunmadan önce Türkçe yazıya çevrilir (`14:30'da` → "on dört otuzda"). Hız ayarı sesin perdesini değiştirmeden uygulanır.
 
 ### Kullanım
 
@@ -396,7 +405,7 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `web/` | Svelte arayüz kaynak kodu (`npm run build` ile `web/dist` oluşur) |
 | `epub_meta.py` | EPUB başlık, yazar ve kapak bilgisi |
 | `tts.py` | Ses motorları: bulma, dil başına seçim, motor süreçleri, zip'ten kurulum, WAV kaydı |
-| `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA işçisi, `motor.json` tanımları |
+| `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA ve VoxCPM işçileri, `motor.json` tanımları |
 | `build_engines.py`, `BUILD_TTS.cmd` | Ses motoru paketlerini derleme |
 | `reader.py` | Okuma sekmesi: kitaplık (`library.json`) ve EPUB bölümlerini güvenli HTML'e dönüştürme |
 | `gui.py` | Eski PySide6 arayüzü (geçiş sürecinde korunuyor) |

@@ -2,3 +2,4 @@
 # EMA Lightning PyTorch kurar. NVIDIA ekran karti icin once CUDA surumlu PyTorch kurun:
 #   py -3 -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 ema-lightning==1.1.0
+voxcpm==2.0.3

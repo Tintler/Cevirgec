@@ -6,7 +6,7 @@ Every voice engine runs as its own process and talks to Çevirgeç through JSON 
     response  {"id": 1, "ok": true, "result": {...}}   or   {"id": 1, "ok": false, "error": "..."}
     event     {"event": "stage", "message": "..."}      (progress while loading or downloading)
 
-Commands: load {voice, device}, say {text, speed, rate}, ping, shutdown. What an engine offers (name,
+Commands: load {voice, device, options}, say {text, speed, rate}, ping, shutdown. What an engine offers (name,
 languages, voices) is described statically in its motor.json, so Çevirgeç can list it without starting it.
 `say` returns a mono 16-bit WAV as base64 with its duration. An engine only implements
 load() and say(); see engines/ema/worker.py.
@@ -48,6 +48,7 @@ class Engine:
 
     def __init__(self):
         self.out = None
+        self.options = {}     # per-voice settings from motor.json "options" (set before load)
 
     def stage(self, message):
         self.out({'event': 'stage', 'message': message})
@@ -85,6 +86,7 @@ def serve(engine):
                 send({'id': number, 'ok': True, 'result': {}})
                 break
             if command == 'load':
+                engine.options = request.get('options') or {}
                 result = engine.load(request.get('voice') or '', request.get('device') or 'auto') or {}
             elif command == 'say':
                 text = ' '.join(str(request.get('text', '')).split())

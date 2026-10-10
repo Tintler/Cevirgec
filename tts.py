@@ -259,24 +259,27 @@ class Engines:
                 self._set('missing', 'Bu dil için kullanılabilir bir ses motoru yok. Ayarlar → Sesli okuma bölümünden kurun.')
                 return self.status()
             target = {'engine': engine_id, 'voice': voice_id, 'device': device or 'auto', 'language': key}
+            options = ((self._prefs().get('options') or {}).get(f'{engine_id}/{voice_id}') or {})
             if self._loading and self._loading.is_alive():
                 return self.status()
             same = (self._worker and self._worker.alive and self.state == 'ready'
                     and (self.current['engine'], self.current['voice']) == (engine_id, voice_id)
-                    and self._requested_device == target['device'])
+                    and self._requested_device == target['device'] and self._options == options)
             if same:
                 self.current['language'] = key
                 return self.status()
             self.current = target
             self._requested_device = target['device']
             self._set('loading', 'Ses motoru başlatılıyor…')
-            self._loading = threading.Thread(target=self._load, args=(target,), name='tts-load', daemon=True)
+            self._options = options
+            self._loading = threading.Thread(target=self._load, args=(target, options), name='tts-load', daemon=True)
             self._loading.start()
         return self.status()
 
     _requested_device = None
+    _options = None
 
-    def _load(self, target):
+    def _load(self, target, options=None):
         try:
             manifest = self._manifests()[target['engine']]
             mode = self._mode(manifest)
@@ -290,7 +293,7 @@ class Engines:
                                 self.install_root / target['engine'] / 'worker.log', self._on_event)
                 worker.start()
                 self._worker = worker
-            result = worker.request('load', voice=target['voice'], device=target['device'])
+            result = worker.request('load', voice=target['voice'], device=target['device'], options=options or {})
             self.current = dict(target, device=result.get('device', target['device']))
             self._set('ready', 'Hazır')
         except Exception as error:

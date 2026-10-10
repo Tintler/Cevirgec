@@ -18,7 +18,7 @@ from tts import Engines, Worker, language_key
 REPO = Path(__file__).resolve().parents[1]
 
 FAKE_WORKER = '''
-import os, time
+import json, os, time
 import numpy as np
 from engines.protocol import Engine, serve
 
@@ -27,6 +27,8 @@ class Fake(Engine):
         self.stage('Hazırlanıyor…')
         with open(os.path.join(os.environ['CEVIRGEC_ENGINE_DATA'], 'loaded.txt'), 'w') as f:
             f.write(voice)
+        with open(os.path.join(os.environ['CEVIRGEC_ENGINE_DATA'], 'options.json'), 'w', encoding='utf-8') as f:
+            json.dump(self.options, f, ensure_ascii=False)
         self.voice = voice
         return {'device': 'cpu', 'voice': voice}
 
@@ -130,6 +132,18 @@ class EnginesTests(unittest.TestCase):
             self.assertEqual(clip.getframerate(), 48000)
             self.assertAlmostEqual(clip.getnframes() / 48000, 2 * (0.2 + 0.35), places=2)
         self.assertEqual(self.load('de')['state'], 'missing')
+
+    def test_voice_options_reach_the_engine_and_reload_it(self):
+        make_engine(self.root, 'ema-lightning', ('tr',))
+        data = self.app / 'ses-motorlari' / 'ema-lightning' / 'data'
+        self.load('tr')
+        self.assertEqual(json.loads((data / 'options.json').read_text(encoding='utf-8')), {})
+        first = self.engines._worker.process.pid
+        self.prefs['options'] = {'ema-lightning/tr-voice': {'description': 'Sakin bir anlatıcı', 'reference': 'C:/ses/kayıt.wav'}}
+        self.assertEqual(self.load('tr')['state'], 'ready')                 # changed options load again
+        self.assertEqual(json.loads((data / 'options.json').read_text(encoding='utf-8')),
+                         {'description': 'Sakin bir anlatıcı', 'reference': 'C:/ses/kayıt.wav'})
+        self.assertEqual(self.engines._worker.process.pid, first)           # same engine: no restart
 
     def test_worker_crash_is_reported(self):
         make_engine(self.root, 'ema-lightning', ('tr',))
@@ -244,3 +258,96 @@ class BridgeTtsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(all(importlib.util.find_spec(name) for name in ('normalizer_tr', 'soundfile', 'torch')),
+                     'normalizer-tr / soundfile / torch kurulu değil')
+class VoxCpmWorkerTests(unittest.TestCase):
+    """engines/voxcpm/worker.py with a stand-in for the 2B-parameter VoxCPM model."""
+
+    def setUp(self):
+        import sys
+        import types
+        import numpy as np
+        # Import the real heavy modules before sys.modules is patched: the patch is undone after each test
+        # and re-importing torch's C extension in the same process crashes.
+        import normalizer_tr, soundfile, torch  # noqa: F401
+        self.calls = []
+        calls = self.calls
+
+        class FakeVoxCPM:
+            loads = []
+
+            def __init__(self, model_id):
+                self.tts_model = types.SimpleNamespace(sample_rate=16000, device='cpu')
+                self.model_id = model_id
+
+            @classmethod
+            def from_pretrained(cls, hf_model_id, **kwargs):
+                cls.loads.append((hf_model_id, kwargs))
+                return cls(hf_model_id)
+
+            def generate(self, text, **kwargs):
+                calls.append((self.model_id, text, kwargs))
+                return np.full(16000, 0.1, np.float32)
+
+        self.Fake = FakeVoxCPM
+        core = types.ModuleType('voxcpm.core')
+        core.VoxCPM = FakeVoxCPM
+        package = types.ModuleType('voxcpm')
+        package.core = core
+        patcher = patch.dict(sys.modules, {'voxcpm': package, 'voxcpm.core': core})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        env = patch.dict('os.environ', {'CEVIRGEC_ENGINE_DATA': self.temp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        from engines.voxcpm.worker import VoxCpmEngine
+        self.engine = VoxCpmEngine()
+        self.engine.out = lambda _message: None
+
+    def test_trendyol_reads_numbers_in_turkish_and_stretches_speed(self):
+        self.engine.options = {}
+        self.engine.load('trendyol', 'auto')
+        self.assertEqual(self.Fake.loads[0][0], 'Trendyol/Trendyol-TTS')
+        self.assertFalse(self.Fake.loads[0][1]['optimize'])
+        audio, rate = self.engine.say("Saat 14:30'da 15 kişi geldi.", 1.0, 0)
+        model, text, kwargs = self.calls[-1]
+        self.assertIn('on dört otuzda', text)
+        self.assertIn('on beş', text)
+        self.assertFalse(kwargs['normalize'])
+        self.assertEqual((kwargs['cfg_value'], kwargs['inference_timesteps']), (2.0, 16))
+        self.assertEqual((len(audio), rate), (16000, 16000))
+        faster, _ = self.engine.say('Merhaba.', 2.0, 0)
+        self.assertLess(len(faster), 12000)
+
+    def test_designed_voice_is_made_once_and_reused(self):
+        self.engine.options = {'description': 'A calm narrator'}
+        self.engine.load('design', 'auto')
+        self.assertEqual(self.Fake.loads[-1][0], 'openbmb/VoxCPM2')
+        designed = [c for c in self.calls if c[1].startswith('(A calm narrator)')]
+        self.assertEqual(len(designed), 1)
+        anchor = self.engine.prompt['reference_wav_path']
+        self.assertTrue(Path(anchor).exists())
+        self.engine.say('Merhaba.', 1.0, 0)
+        self.assertEqual(self.calls[-1][2]['prompt_wav_path'], anchor)
+        self.assertTrue(self.calls[-1][2]['prompt_text'])
+        count = len(self.calls)
+        self.engine.load('design', 'auto')                       # same description: anchor reused
+        self.assertFalse(any(c[1].startswith('(') for c in self.calls[count:]))
+        self.assertEqual(len(self.Fake.loads), 1)                # same base model: not reloaded
+
+    def test_clone_requires_a_recording(self):
+        self.engine.options = {}
+        with self.assertRaises(RuntimeError) as caught:
+            self.engine.load('clone', 'auto')
+        self.assertIn('ses kaydı', str(caught.exception))
+        recording = Path(self.temp.name) / 'kayıt.wav'
+        recording.write_bytes(b'RIFF')
+        self.engine.options = {'reference': str(recording), 'reference_text': 'Merhaba dünya.'}
+        self.engine.load('clone', 'auto')
+        self.engine.say('Selam.', 1.0, 0)
+        kwargs = self.calls[-1][2]
+        self.assertEqual((kwargs['reference_wav_path'], kwargs['prompt_text']), (str(recording), 'Merhaba dünya.'))
