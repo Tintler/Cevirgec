@@ -13,6 +13,8 @@ from pathlib import Path
 import re
 import threading
 import traceback
+import webbrowser
+import zipfile
 
 from app_core import (APP_DIR, DEFAULT_CONFIG, Client, GracefulStop, PauseController, TranslationEngine,
                       _dedupe_glossary, analysis_from_checkpoints, analysis_terms, chapters_containing,
@@ -20,6 +22,7 @@ from app_core import (APP_DIR, DEFAULT_CONFIG, Client, GracefulStop, PauseContro
                       save_json, validate_config, validate_rerun)
 from epub_import import prepare
 from epub_meta import book_info
+from reader import Library
 
 SETTINGS_KEYS = tuple(DEFAULT_CONFIG)
 LOCKED_WHILE_RUNNING = ('base_url', 'model', 'temperature', 'timeout_seconds', 'chunk_chars', 'max_tokens',
@@ -611,6 +614,62 @@ class Bridge:
                   'diğer çalışma ayarları sonraki bölümde uygulanır.')
         self.refresh_models()
         return {'config': merged}
+
+    # ------------------------------------------------------------------ reading tab
+    def _library(self):
+        directory = Path(APP_DIR)
+        if getattr(self, '_library_cache', None) is None or self._library_cache.directory != directory:
+            self._library_cache = Library(directory)
+        return self._library_cache
+
+    def _reading(self, action, *args):
+        try:
+            return action(*args)
+        except (ValueError, OSError, KeyError, zipfile.BadZipFile) as error:
+            return _error(error)
+
+    def library_list(self):
+        return self._reading(self._library().list)
+
+    def library_add(self, paths=None):
+        """Adds EPUB files (opens a multi-select dialog when no paths are given)."""
+        if paths is None:
+            paths = self._dialogs.open_files('Kitaplığa EPUB ekle', ('EPUB (*.epub)',)) if self._dialogs else None
+            if not paths:
+                return None
+        result = self._reading(self._library().add, list(paths))
+        if 'error' not in result:
+            result['books'] = self._library().list()
+            self._emit('library', result)
+        return result
+
+    def library_remove(self, book_id):
+        return self._reading(lambda: (self._library().remove(book_id), self._library().list())[1])
+
+    def library_cover(self, book_id):
+        return self._reading(self._library().cover, book_id)
+
+    def reader_open(self, book_id):
+        return self._reading(self._library().open, book_id)
+
+    def reader_section(self, book_id, number):
+        return self._reading(self._library().section, book_id, number)
+
+    def reader_save_position(self, book_id, section, offset):
+        return self._reading(self._library().save_position, book_id, section, offset)
+
+    def reader_add_bookmark(self, book_id, section, offset, label):
+        return self._reading(self._library().add_bookmark, book_id, section, offset, label)
+
+    def reader_remove_bookmark(self, book_id, bookmark_id):
+        return self._reading(self._library().remove_bookmark, book_id, bookmark_id)
+
+    def open_external(self, url):
+        """Opens an http(s)/mailto link from a book in the system browser."""
+        if not re.match(r'^(?:https?://|mailto:)', str(url), re.I):
+            return {'error': 'Yalnızca web ve e-posta bağlantıları açılabilir.'}
+        webbrowser.open(str(url))
+        return True
 
     # ------------------------------------------------------------------ window lifecycle
     def request_close(self, close):

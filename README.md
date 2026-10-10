@@ -25,6 +25,7 @@
 - Parça bazlı atomik kontrol noktaları, duraklatma ve proje sürdürme
 - Ayarlanabilir otomatik yeniden deneme ve context/token ön kontrolü
 - Dahili EPUB doğrulaması ve isteğe bağlı EPUBCheck
+- Okuma sekmesi: kendi EPUB kitaplığınız, kaldığı yerden devam, yer imleri, yazı/sayfa ayarları
 - Windows için tek dosyalı `.exe` derleme komut dosyası
 
 ## Gereksinimler

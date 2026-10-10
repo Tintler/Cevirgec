@@ -29,4 +29,5 @@ web/dist/
 
 # Arayuz tercihleri (tema vb.) ve yerel arac ayarlari
 ui.json
+library.json
 .claude/

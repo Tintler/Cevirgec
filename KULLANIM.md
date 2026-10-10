@@ -7,6 +7,7 @@ Bu belge Çevirgeç'in kurulumu, arayüzü, ayarları, proje yapısı, EPUB üre
 - [Kurulum ve çalıştırma](#kurulum-ve-çalıştırma)
 - [LM Studio bağlantısı ve model seçimi](#lm-studio-bağlantısı-ve-model-seçimi)
 - [Arayüz kullanımı](#arayüz-kullanımı)
+- [Okuma](#okuma)
 - [Özel terim sözlüğü](#özel-terim-sözlüğü)
 - [İsteğe bağlı ön analiz](#isteğe-bağlı-ön-analiz)
 - [Çeviri, kontrol noktaları ve yeniden deneme](#çeviri-kontrol-noktaları-ve-yeniden-deneme)
@@ -129,6 +130,17 @@ Pencere kapatılırsa devam eden API isteği ile kayıt işleminin tamamlanması
 Bölüme sağ tıklayıp **Bu bölümü yeniden çevir** seçilebilir. Mevcut çeviri `_python_translation/<bölüm>/recheck-prev-<tarih>.md` olarak yedeklenir. Bölüm `next` durumuna alınır ve sonraki bölümlerin bağlamı kullanılmadan yeniden çevrilir. Önceki bölümlerin terim, karakter ve üslup kararları korunur.
 
 Yeniden çeviri yalnızca seçilen bölümü işler. Tamamlandığında `TAM-CEVIRI.md` ve kitap bütünü tamamlanmışsa EPUB yeniden oluşturulur. Aynı bölüm birden fazla kez yeniden çevrilebilir.
+
+## Okuma
+
+**Okuma** sekmesi kendi EPUB kitaplarınızı okumak içindir; çeviri projelerinden bağımsızdır.
+
+- **Kitap ekle** ile bir veya birden çok EPUB seçin ya da dosyaları pencerenin herhangi bir yerine sürükleyip bırakın. Dosyalar kopyalanmaz; kitaplık yalnızca konumlarını, okuma ilerlemesini ve yer imlerini `library.json` dosyasında (`config.json` ile aynı klasörde) saklar. DRM korumalı kitaplar eklenemez.
+- Kapağa tıklayınca kitap kaldığı yerden açılır. Kitaplığın üstündeki **Okumaya devam et** alanı en son okunan, bitmemiş kitabı gösterir. Kitabı kaldırmak için kapağın köşesindeki × düğmesini ya da sağ tık menüsünü kullanın; dosyanın kendisi silinmez. Taşınmış veya silinmiş dosyalar soluk gösterilir.
+- Okuyucuda soldaki panel **İçindekiler** ve **Yer imleri** arasında geçiş yapar. Üstteki yer imi düğmesi bulunduğunuz konumu işaretler veya işareti kaldırır.
+- **Görünüm** (T simgesi) ile yazı boyutu, yazı tipi (serif/sans), satır aralığı, sütun genişliği ve sayfa rengi (tema, koyu, sepya, açık) seçilir; tercih tüm kitaplar için saklanır.
+- Bölümler arasında alttaki oklarla, bölüm sonundaki **Sonraki bölüm** düğmesiyle ya da `Alt+←` / `Alt+→` ile geçilir. Alt çubuk kitap genelindeki ilerlemeyi gösterir.
+- Kitaplar uygulamanın kendi yazı tipi ve renkleriyle gösterilir. Yayıncının CSS'i, betikleri ve dış kaynakları uygulanmaz; içerik güvenli bir HTML alt kümesine dönüştürülür. Kitap içindeki web bağlantıları sistem tarayıcısında açılır.
 
 ## Özel terim sözlüğü
 
@@ -338,6 +350,7 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `bridge.py` | Arayüzden bağımsız uygulama denetleyicisi; arayüzün çağırdığı işlemler ve olaylar |
 | `web/` | Svelte arayüz kaynak kodu (`npm run build` ile `web/dist` oluşur) |
 | `epub_meta.py` | EPUB başlık, yazar ve kapak bilgisi |
+| `reader.py` | Okuma sekmesi: kitaplık (`library.json`) ve EPUB bölümlerini güvenli HTML'e dönüştürme |
 | `gui.py` | Eski PySide6 arayüzü (geçiş sürecinde korunuyor) |
 | `app_core.py` | Ayarlar, LM Studio istemcisi, çeviri/analiz/checkpoint çekirdeği |
 | `epub_import.py` | EPUB'u proje ve Markdown bölümlerine dönüştürme |
@@ -348,6 +361,7 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `requirements.txt` | Sabitlenmiş çalışma ve derleme bağımlılıkları |
 | `tests/test_core.py` | Çekirdek, checkpoint ve EPUB testleri |
 | `tests/test_bridge.py` | Arayüz denetleyicisi akış testleri |
+| `tests/test_reader.py` | Okuyucu, HTML temizleme ve kitaplık testleri |
 
 ## Testler
 

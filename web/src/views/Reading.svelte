@@ -1,21 +1,23 @@
 <script>
-  import Icon from '../lib/Icon.svelte';
+  import Library from './Library.svelte';
+  import Reader from './Reader.svelte';
+  import { app, act } from '../lib/state.svelte.js';
+
+  async function open(entry) {
+    const data = await act('reader_open', entry.id);
+    if (!data) return;
+    app.reading = { book: data, section: data.position.section, offset: data.position.offset, percent: data.percent };
+  }
+
+  async function close() {
+    app.reading = { book: null, section: 0, offset: 0, percent: 0 };
+    const books = await act('library_list');
+    if (books) app.library = books;
+  }
 </script>
 
-<section class="screen">
-  <div class="top"><h1>Okuma</h1></div>
-  <div class="card soon">
-    <div class="logo"><Icon name="headphones" size={34} /></div>
-    <h2>Kitap okuma ve sesli dinleme yakında</h2>
-    <p>Bu sekmede kendi açtığınız EPUB kitapları okuyabilecek ve EMA Lightning ile Türkçe sesli dinleyebileceksiniz.</p>
-  </div>
-</section>
-
-<style>
-  .screen { display: flex; flex-direction: column; gap: 16px; padding: 18px 28px 28px; height: 100%; }
-  .top h1 { font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
-  .soon { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 40px; }
-  .logo { width: 72px; height: 72px; border-radius: 20px; display: grid; place-items: center; background: var(--surface); color: var(--accent); }
-  h2 { font-size: 22px; }
-  p { color: var(--secondary); max-width: 460px; }
-</style>
+{#if app.reading.book}
+  <Reader onclose={close} />
+{:else}
+  <Library onopen={open} />
+{/if}

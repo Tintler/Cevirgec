@@ -12,7 +12,13 @@ export const app = $state({
   review: null,
   // Translate screen view state, kept here so it survives switching tabs.
   translate: { tab: 'preview', selected: null, preAnalysis: false },
+  // Reading tab: library books, the open book (null = library view) and reader preferences.
+  library: [],
+  reading: { book: null, section: 0, offset: 0, percent: 0 },
+  reader: { size: 19, font: 'serif', leading: 1.75, width: 680, paper: 'theme' },
 });
+
+export const READER_DEFAULTS = { size: 19, font: 'serif', leading: 1.75, width: 680, paper: 'theme' };
 
 export const toasts = $state([]);
 
@@ -61,8 +67,19 @@ export async function init() {
     }
     else toast(message, outcome === 'done' ? 'ok' : 'info');
   });
+  on('library', ({ books, added, errors }) => {
+    app.library = books;
+    if (added?.length) {
+      toast(added.length === 1 ? 'Kitap kitaplığa eklendi.' : `${added.length} kitap kitaplığa eklendi.`, 'ok');
+      if (!app.reading.book) app.view = 'reading';
+    }
+    for (const message of errors ?? []) toast(message, 'error');
+  });
   const prefs = await call('ui_prefs');
   setTheme(prefs?.theme ?? 'dark', false);
+  app.reader = { ...READER_DEFAULTS, ...(prefs?.reader ?? {}) };
+  const books = await call('library_list');
+  if (Array.isArray(books)) app.library = books;
   applySnapshot(await call('snapshot'));
   call('refresh_models');
 }
@@ -86,4 +103,8 @@ export async function act(method, ...args) {
     toast(String(error?.message ?? error), 'error');
     return null;
   }
+}
+
+export function saveReaderPrefs() {
+  call('save_ui_prefs', { reader: $state.snapshot(app.reader) });
 }

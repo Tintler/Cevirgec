@@ -9,6 +9,7 @@ import json
 import sys
 
 import webview
+from webview.dom import DOMEventHandler
 
 from app_core import ROOT
 from bridge import Bridge
@@ -23,6 +24,10 @@ class Dialogs:
     def open_file(self, title, file_types):
         result = self.window.create_file_dialog(webview.FileDialog.OPEN, file_types=file_types)
         return result[0] if result else None
+
+    def open_files(self, title, file_types):
+        result = self.window.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=True, file_types=file_types)
+        return list(result) if result else None
 
     def open_folder(self, title):
         result = self.window.create_file_dialog(webview.FileDialog.FOLDER)
@@ -64,6 +69,18 @@ def main():
         return bridge.request_close(close_later)
 
     window.events.closing += on_closing
+
+    def on_drop(event):
+        files = event.get('dataTransfer', {}).get('files', [])
+        paths = [item['pywebviewFullPath'] for item in files if item.get('pywebviewFullPath')]
+        if paths:
+            bridge.library_add(paths)
+
+    def on_loaded():
+        # EPUB files dropped anywhere on the window are added to the reading library.
+        window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True)
+
+    window.events.loaded += on_loaded
     icon = ROOT / 'assets' / 'app.ico'
     webview.start(http_server=not dev, debug='--debug' in sys.argv, icon=str(icon) if icon.exists() else None)
 

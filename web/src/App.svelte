@@ -20,11 +20,28 @@
   const models = $derived(app.models);
   const modelLoaded = $derived((models.loaded ?? []).find((m) => m.name === models.model));
 
+  let dragging = $state(false);
+  const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes('Files');
+
+  // Dropped files are picked up by desktop.py (full paths); the page only has to allow the drop.
+  function dragover(event) {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragging = true;
+  }
+
   async function submitReview(values) {
     app.review = null;
     await call('submit_review', values);
   }
 </script>
+
+<svelte:window ondragover={dragover} ondragleave={(e) => { if (!e.relatedTarget) dragging = false; }}
+  ondrop={(e) => { e.preventDefault(); dragging = false; }} />
+
+{#if dragging}
+  <div class="dropzone"><div><Icon name="book" size={40} /><b>EPUB'u kitaplığa eklemek için bırakın</b></div></div>
+{/if}
 
 <div class="shell">
   <aside class="side">
@@ -88,6 +105,9 @@
   .lm .c { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   main { min-width: 0; min-height: 0; height: 100%; }
 
+  .dropzone { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, .6); display: grid; place-items: center; pointer-events: none; }
+  .dropzone div { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 40px 56px; border: 2px dashed var(--accent);
+    border-radius: 20px; color: var(--accent); background: var(--panel); font-size: 16px; }
   .toasts { position: fixed; right: 20px; bottom: 84px; display: flex; flex-direction: column; gap: 8px; z-index: 60; max-width: 420px; }
   .toast { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-active); border: 1px solid var(--outline); box-shadow: var(--shadow); font-size: 13px; }
   .toast > span { flex: 1; }
