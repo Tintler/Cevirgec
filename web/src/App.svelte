@@ -5,7 +5,7 @@
   import Settings from './views/Settings.svelte';
   import ReviewModal from './components/ReviewModal.svelte';
   import ConfirmHost from './components/ConfirmHost.svelte';
-  import { app, init, toasts, setTheme } from './lib/state.svelte.js';
+  import { app, init, toasts, setTheme, dismissToast } from './lib/state.svelte.js';
   import { call } from './lib/api.js';
   import logo from '../../assets/app.svg';
 
@@ -59,7 +59,10 @@
 
 <div class="toasts">
   {#each toasts as t (t.id)}
-    <div class="toast {t.kind}"><Icon name={t.kind === 'error' ? 'alert' : 'check'} size={16} /><span class="selectable">{t.message}</span></div>
+    <div class="toast {t.kind}">
+      <Icon name={t.kind === 'error' ? 'alert' : 'check'} size={16} /><span class="selectable">{t.message}</span>
+      <button class="close" title="Kapat" onclick={() => dismissToast(t.id)}><Icon name="x" size={14} /></button>
+    </div>
   {/each}
 </div>
 
@@ -87,7 +90,10 @@
 
   .toasts { position: fixed; right: 20px; bottom: 84px; display: flex; flex-direction: column; gap: 8px; z-index: 60; max-width: 420px; }
   .toast { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-active); border: 1px solid var(--outline); box-shadow: var(--shadow); font-size: 13px; }
-  .toast.ok :global(svg) { color: var(--ok); }
+  .toast > span { flex: 1; }
+  .toast .close { color: var(--dim); margin: -2px -4px 0 0; display: grid; place-items: center; }
+  .toast .close:hover { color: var(--text); }
+  .toast.ok > :global(svg) { color: var(--ok); }
   .toast.error { border-color: color-mix(in srgb, var(--danger) 50%, var(--outline)); }
-  .toast.error :global(svg) { color: var(--danger); }
+  .toast.error > :global(svg) { color: var(--danger); }
 </style>

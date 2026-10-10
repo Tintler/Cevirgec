@@ -16,13 +16,18 @@ export const app = $state({
 
 export const toasts = $state([]);
 
+let toastId = 0;
+
 export function toast(message, kind = 'info') {
-  const item = { id: Math.random(), message, kind };
-  toasts.push(item);
-  setTimeout(() => {
-    const index = toasts.indexOf(item);
-    if (index >= 0) toasts.splice(index, 1);
-  }, kind === 'error' ? 7000 : 4000);
+  const id = ++toastId;
+  toasts.push({ id, message, kind });
+  setTimeout(() => dismissToast(id), kind === 'error' ? 7000 : 4000);
+}
+
+// Looks the toast up by id: the array holds Svelte proxies, so the original object is never found by indexOf.
+export function dismissToast(id) {
+  const index = toasts.findIndex((t) => t.id === id);
+  if (index >= 0) toasts.splice(index, 1);
 }
 
 export function applySnapshot(snapshot) {

@@ -275,6 +275,19 @@ class CoreTests(unittest.TestCase):
         result = inline_markup('![Tom & Jerry <Co>](epub-resource:img/a.png)', asset_map)
         self.assertIn('alt="Tom &amp; Jerry &lt;Co&gt;"', result)
 
+    def test_inline_markup_nests_bold_italic_well_formed(self):
+        cases = {
+            '***Compulsory***': '<strong><em>Compulsory</em></strong>',
+            '**bold *it* text**': '<strong>bold <em>it</em> text</strong>',
+            '*it **bold** text*': '<em>it <strong>bold</strong> text</em>',
+            'a ***b*** c *d* **e**': 'a <strong><em>b</em></strong> c <em>d</em> <strong>e</strong>',
+        }
+        for source, expected in cases.items():
+            self.assertEqual(inline_markup(source, {}), expected, source)
+        # Crossed or unbalanced markers must never produce mismatched tags.
+        for source in ('***a** b*', '**a *b** c*', '*a **b* c**', '***x', 'x***'):
+            ET.fromstring('<p>' + inline_markup(source, {}) + '</p>')
+
     def test_generate_accepts_thinking_and_response_in_sentence_middle(self):
         cfg = dict(DEFAULT_CONFIG); cfg['token_estimation_enabled'] = False
         client = Client(cfg, lambda _message: None)
