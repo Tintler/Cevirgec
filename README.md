@@ -5,11 +5,13 @@
   </picture>
 </div>
 
-![Çevirgeç arayüzü](ONIZLEME.png)
+![Çevirgeç çeviri ekranı](ONIZLEME.png)
+
+![Çevirgeç okuma ve sesli okuma ekranı](ONIZLEME-OKUMA.png)
 
 Çevirgeç, DRM içermeyen EPUB kitaplarını LM Studio'da çalışan yerel bir modelle İngilizceden Türkçeye çevirmek için geliştirilmiş masaüstü uygulaması ve komut satırı aracıdır. Kaynak EPUB'u bölümlere ayırır, çeviriyi güvenli kontrol noktalarıyla yürütür ve görselleri, temel metadata alanlarını ve EPUB içi bağlantıları koruyarak yeni bir EPUB oluşturur.
 
-> **English:** Çevirgeç is a Turkish GUI and CLI application for translating DRM-free EPUB books with a local model served by LM Studio. It supports resumable checkpoints, optional book analysis, terminology enforcement and EPUB reconstruction.
+> **English:** Çevirgeç is a Turkish GUI and CLI application for translating DRM-free EPUB books with a local model served by LM Studio. It supports resumable checkpoints, optional book analysis, terminology enforcement and EPUB reconstruction, and includes an EPUB reader with offline Turkish read-aloud through pluggable local voice engines.
 
 > [!IMPORTANT]
 > Uygulamayı yalnızca çevirme ve dönüştürme hakkına sahip olduğunuz, DRM içermeyen dosyalarda kullanın. Model çıktısı yayımlanmadan önce insan tarafından gözden geçirilmelidir.
@@ -26,12 +28,12 @@
 - Ayarlanabilir otomatik yeniden deneme ve context/token ön kontrolü
 - Dahili EPUB doğrulaması ve isteğe bağlı EPUBCheck
 - Okuma sekmesi: kendi EPUB kitaplığınız, kaldığı yerden devam, yer imleri, yazı/sayfa ayarları
-- Tak-çıkar ses motorlarıyla çevrimdışı sesli okuma: Türkçe için [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) ve doğal anlatım için [Trendyol-TTS](https://huggingface.co/Trendyol/Trendyol-TTS) / [VoxCPM2](https://huggingface.co/openbmb/VoxCPM2) (ses tasarımı ve klonlama); ses seçimi, cümle vurgulama, hız, bölümü WAV olarak kaydetme. Motor paketleri yerelde `BUILD_TTS.cmd` ile oluşturulup Ayarlar'dan kurulur.
+- Tak-çıkar ses motorlarıyla çevrimdışı sesli okuma: Türkçe için [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) ve doğal anlatım için [Trendyol-TTS](https://huggingface.co/Trendyol/Trendyol-TTS) / [VoxCPM2](https://huggingface.co/openbmb/VoxCPM2) (ses tasarımı ve klonlama); ses seçimi, cümle vurgulama, hız, sesi önceden hazırlayıp motorsuz dinleme, bölümü WAV olarak kaydetme. Motor paketleri yerelde `BUILD_TTS.cmd` ile oluşturulup Ayarlar'dan kurulur.
 - Windows için tek dosyalı `.exe` derleme komut dosyası
 
 ## Gereksinimler
 
-- Python 3.10 veya üzeri
+- Python 3.10 veya üzeri (sesli okuma motorları için 3.11+)
 - [LM Studio](https://lmstudio.ai/) ve yüklü bir sohbet modeli
 - Kaynak koddan arayüz için `pywebview` ve arayüzü derlemek için [Node.js](https://nodejs.org/) 20+
 - Windows'ta Microsoft Edge WebView2 (Windows 10/11'de hazır gelir)

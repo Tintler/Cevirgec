@@ -409,7 +409,6 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA ve VoxCPM işçileri, `motor.json` tanımları |
 | `build_engines.py`, `BUILD_TTS.cmd` | Ses motoru paketlerini derleme |
 | `reader.py` | Okuma sekmesi: kitaplık (`library.json`) ve EPUB bölümlerini güvenli HTML'e dönüştürme |
-| `gui.py` | Eski PySide6 arayüzü (geçiş sürecinde korunuyor) |
 | `app_core.py` | Ayarlar, LM Studio istemcisi, çeviri/analiz/checkpoint çekirdeği |
 | `epub_import.py` | EPUB'u proje ve Markdown bölümlerine dönüştürme |
 | `epub_output.py` | Çevrilmiş EPUB'u üretme ve doğrulama |
