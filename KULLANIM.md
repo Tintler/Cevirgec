@@ -7,6 +7,8 @@ Bu belge Çevirgeç'in kurulumu, arayüzü, ayarları, proje yapısı, EPUB üre
 - [Kurulum ve çalıştırma](#kurulum-ve-çalıştırma)
 - [LM Studio bağlantısı ve model seçimi](#lm-studio-bağlantısı-ve-model-seçimi)
 - [Arayüz kullanımı](#arayüz-kullanımı)
+- [Okuma](#okuma)
+- [Sesli okuma](#sesli-okuma)
 - [Özel terim sözlüğü](#özel-terim-sözlüğü)
 - [İsteğe bağlı ön analiz](#isteğe-bağlı-ön-analiz)
 - [Çeviri, kontrol noktaları ve yeniden deneme](#çeviri-kontrol-noktaları-ve-yeniden-deneme)
@@ -28,7 +30,8 @@ Gereksinimler:
 
 - Python 3.10 veya üzeri
 - [LM Studio](https://lmstudio.ai/) ve yüklü bir sohbet modeli
-- Kaynak koddan arayüz için PySide6
+- Kaynak koddan arayüz için pywebview ve arayüzü derlemek için Node.js 20+
+- Windows'ta Microsoft Edge WebView2 (Windows 10/11'de hazır gelir)
 - Paketleme için PyInstaller
 - İsteğe bağlı EPUBCheck; JAR kullanılırsa Java
 
@@ -39,14 +42,23 @@ py -3 -m pip install -r requirements.txt
 GUI_BASLAT.cmd
 ```
 
+`GUI_BASLAT.cmd` ilk açılışta `web` klasöründeki arayüzü derler (`npm ci` ve `npm run build`). Arayüz kodu değiştiğinde yeniden derlemek için `web` klasöründe `npm run build` çalıştırın.
+
+```powershell
+# Arayüz geliştirme: Vite sunucusu ile anlık yenileme
+cd web; npm run dev
+py -3 desktop.py --dev
+```
+
 Linux/macOS terminali:
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 gui.py
+(cd web && npm ci && npm run build)
+python3 desktop.py
 ```
 
-Windows'ta `GUI_BASLAT.cmd` arayüzü, `BASLAT.cmd` etkileşimli CLI akışını başlatır. Linux ve macOS için hazır paketleme dosyası yoktur; Python ve PySide6 ile kaynak koddan çalıştırılır.
+Windows'ta `GUI_BASLAT.cmd` arayüzü, `BASLAT.cmd` etkileşimli CLI akışını başlatır. Linux ve macOS için hazır paketleme dosyası yoktur; Python, pywebview ve Node.js ile kaynak koddan çalıştırılır.
 
 ## LM Studio bağlantısı ve model seçimi
 
@@ -58,7 +70,7 @@ http://127.0.0.1:1234/v1
 
 Çevirgeç model keşfi için önce `/api/v1/models`, gerektiğinde `/api/v0/models`; çeviri ve analiz istekleri için `/api/v1/chat` kullanır. Tek model yüklüyse otomatik seçilir. Birden fazla model varsa açılır listeden seçim yapılır; model alanı serbest metin değildir.
 
-Ana ekranda seçilen modelin yanında LM Studio'da fiilen yüklü model ve algılanabiliyorsa aktif context uzunluğu gösterilir. **Yenile** düğmesi sunucu durumunu ve model listesini yeniden sorgular.
+Sol alttaki LM Studio kartında bağlantı durumu, seçili model ve algılanabiliyorsa aktif context uzunluğu gösterilir. Karttaki yenile düğmesi sunucu durumunu ve model listesini yeniden sorgular.
 
 Base URL yalnızca `localhost`, `127.0.0.1` veya `::1` adreslerini kabul eder. LM Studio anahtar gerektirecek şekilde yapılandırıldıysa `LM_STUDIO_API_KEY` ortam değişkeni kullanılabilir.
 
@@ -66,26 +78,24 @@ Base URL yalnızca `localhost`, `127.0.0.1` veya `::1` adreslerini kabul eder. L
 
 Yeni bir çeviri için:
 
-1. **EPUB dosyası** alanından kaynak kitabı seçin.
-2. **Çalışma klasörü** alanından projenin oluşturulacağı ana klasörü seçin.
-3. Gerekirse **Yenile** ile model listesini güncelleyin.
-4. İsterseniz **Ön analiz yap** seçeneğini açın.
-5. **Çeviriyi Başlat** düğmesine basın.
+1. **Çeviri** sekmesinde **EPUB aç** ile kaynak kitabı seçin.
+2. Çalışma klasörü varsayılan olarak EPUB'un bulunduğu klasördür; değiştirmek için kitap kartındaki klasör yoluna tıklayın.
+3. Sol alttaki LM Studio kartında modelin yüklü olduğunu kontrol edin.
+4. İsterseniz alt çubuktaki **Ön analiz** anahtarını açın.
+5. **Çeviriyi başlat** düğmesine basın.
 6. Kitaba özgü terimleri girin veya sözlüğü boş bırakın.
 7. Ön analiz açıksa analiz edilecek hikâye bölümlerini seçin.
 
 Uygulama `<KitapAdı>-ceviri` adlı proje klasörü oluşturur. Aynı ad kullanımdaysa numaralı yeni bir ad seçilir.
 
-### Üst alan
+### Ekran düzeni
 
-- **Seçili model:** Çeviride kullanılacak yüklü model.
-- **LM Studio:** Yüklü model ve algılanan context uzunluğu.
-- **Yenile:** Model listesini ve sunucu durumunu yeniden sorgular.
-- **EPUB dosyası:** Yeni projenin kaynak EPUB'u.
-- **Çalışma klasörü:** Projenin oluşturulacağı ana klasör.
+- **Sol kenar çubuğu:** **Çeviri**, **Okuma** ve **Ayarlar** sekmeleri; tema düğmesi ve LM Studio durum kartı.
+- **Kitap kartı:** Kapak, başlık, yazar, bölüm/karakter sayısı, kaynak EPUB ve çalışma klasörü yolları ile tamamlanan bölüm ve yüzde. Yollara tıklayarak EPUB veya çalışma klasörü değiştirilebilir.
+- **EPUB aç:** Yeni projenin kaynak EPUB'unu seçer.
 - **Projeyi sürdür:** Mevcut `<KitapAdı>-ceviri` klasörünü açar ve ilk eksik checkpoint'ten devam eder.
-- **Terim düzenle:** Projenin sözlüğünü açar ve gerekirse etkilenen tamamlanmış bölümlerin yeniden çevrilmesini önerir.
-- **Ayarlar:** Kitap/EPUB ve LM Studio/model seçeneklerini açar.
+- **Terim sözlüğü** (alt çubuk): Projenin sözlüğünü açar ve gerekirse etkilenen tamamlanmış bölümlerin yeniden çevrilmesini önerir.
+- **Ayarlar** sekmesi: Görünüm, LM Studio/model, kitap/EPUB ve gelişmiş seçenekler.
 
 ### Bölüm listesi ve sekmeler
 
@@ -103,16 +113,16 @@ Başlıca durumlar:
 
 Sağ sekmeler:
 
-- **Durum:** Aktif bölüm, parça sayısı ve ilerleme. Yüzde değeri çubuğun sağındaki sabit koyu kutuda gösterilir.
+- **Durum:** Aşama, aktif bölüm ve parça, tamamlanan bölüm, son kayıt zamanı ve ilerleme. Kitap geneli yüzde alt çubukta da gösterilir.
 - **Konsol:** API istekleri, token bilgileri, tekrarlar, uyarılar ve hatalar.
-- **Ön Analiz:** Kaydedilmiş analiz sonuçları.
-- **Kaynak / Türkçe:** Seçilen bölümün iki metnini yan yana gösterir.
+- **Ön analiz:** Kaydedilmiş analiz sonuçları.
+- **Kaynak / Türkçe:** Seçilen bölümün iki metnini yan yana gösterir; sözlük terimleri vurgulanır.
 
 Konsol kayıtları aynı zamanda proje içindeki `translation.log` dosyasına yazılır.
 
 ### Duraklatma ve güvenli kapanış
 
-**Duraklat** aktif LM Studio isteğini kesmez. İstek tamamlanır, geçerli sonuç checkpoint'e yazılır ve program sonraki parçaya geçmeden bekler. Düğme önce **Duraklatılıyor…**, ardından **Devam Et** olur.
+**Duraklat** aktif LM Studio isteğini kesmez. İstek tamamlanır, geçerli sonuç checkpoint'e yazılır ve program sonraki parçaya geçmeden bekler. Düğme önce **Duraklatılıyor…**, ardından **Devam et** olur.
 
 Pencere kapatılırsa devam eden API isteği ile kayıt işleminin tamamlanması beklenir. Görev Yöneticisi veya işletim sistemiyle zorla sonlandırma engellenemez; bu durumda son tamamlanmış checkpoint korunur.
 
@@ -121,6 +131,71 @@ Pencere kapatılırsa devam eden API isteği ile kayıt işleminin tamamlanması
 Bölüme sağ tıklayıp **Bu bölümü yeniden çevir** seçilebilir. Mevcut çeviri `_python_translation/<bölüm>/recheck-prev-<tarih>.md` olarak yedeklenir. Bölüm `next` durumuna alınır ve sonraki bölümlerin bağlamı kullanılmadan yeniden çevrilir. Önceki bölümlerin terim, karakter ve üslup kararları korunur.
 
 Yeniden çeviri yalnızca seçilen bölümü işler. Tamamlandığında `TAM-CEVIRI.md` ve kitap bütünü tamamlanmışsa EPUB yeniden oluşturulur. Aynı bölüm birden fazla kez yeniden çevrilebilir.
+
+## Okuma
+
+**Okuma** sekmesi kendi EPUB kitaplarınızı okumak içindir; çeviri projelerinden bağımsızdır.
+
+- **Kitap ekle** ile bir veya birden çok EPUB seçin ya da dosyaları pencerenin herhangi bir yerine sürükleyip bırakın. Dosyalar kopyalanmaz; kitaplık yalnızca konumlarını, okuma ilerlemesini ve yer imlerini `library.json` dosyasında (`config.json` ile aynı klasörde) saklar. DRM korumalı kitaplar eklenemez.
+- Kapağa tıklayınca kitap kaldığı yerden açılır. Kitaplığın üstündeki **Okumaya devam et** alanı en son okunan, bitmemiş kitabı gösterir. Kitabı kaldırmak için kapağın köşesindeki × düğmesini ya da sağ tık menüsünü kullanın; dosyanın kendisi silinmez. Taşınmış veya silinmiş dosyalar soluk gösterilir.
+- Okuyucuda soldaki panel **İçindekiler** ve **Yer imleri** arasında geçiş yapar. Üstteki yer imi düğmesi bulunduğunuz konumu işaretler veya işareti kaldırır.
+- **Görünüm** (T simgesi) ile yazı boyutu, yazı tipi (serif/sans), satır aralığı, sütun genişliği ve sayfa rengi (tema, koyu, sepya, açık) seçilir; tercih tüm kitaplar için saklanır.
+- Bölümler arasında alttaki oklarla, bölüm sonundaki **Sonraki bölüm** düğmesiyle ya da `Alt+←` / `Alt+→` ile geçilir. Alt çubuk kitap genelindeki ilerlemeyi gösterir.
+- Kitaplar uygulamanın kendi yazı tipi ve renkleriyle gösterilir. Yayıncının CSS'i, betikleri ve dış kaynakları uygulanmaz; içerik güvenli bir HTML alt kümesine dönüştürülür. Kitap içindeki web bağlantıları sistem tarayıcısında açılır.
+
+## Sesli okuma
+
+Okuyucu, açık kitabı yerel bir **ses motoruyla** sesli okuyabilir; metin bilgisayardan çıkmaz. Motorlar tak-çıkar biçimdedir ve kitabın diline göre seçilir:
+
+| Motor | Diller | Not |
+|---|---|---|
+| [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) | Türkçe | Küçük ve çok hızlı; CPU'da da gerçek zamandan hızlı. Model (~34 MB) ilk kullanımda Hugging Face'ten iner. Apache-2.0. |
+| VoxCPM: [Trendyol-TTS](https://huggingface.co/Trendyol/Trendyol-TTS) ve [VoxCPM2](https://huggingface.co/openbmb/VoxCPM2) | Türkçe | En doğal anlatım. NVIDIA ekran kartı önerilir (~8 GB bellek); model ilk kullanımda ~5 GB iner. Üç ses: Trendyol-TTS anlatıcısı, tarifle tasarlanan ses, kayıttan klonlanan ses. MIT / Apache-2.0. |
+
+Motor paketleri yayımlanmaz ve uygulama hiçbir paketi kendisi indirmez: paketleri kendi bilgisayarınızda oluşturup Ayarlar'dan kurarsınız. Model ve ses dosyaları ilk kullanımda kendi resmi kaynaklarından indirilir.
+
+### Motor paketlerini oluşturma ve kurma
+
+1. Bağımlılıkları kurun. EMA'nın ekran kartıyla çalışması için önce CUDA'lı PyTorch'u kurun (RTX 50 serisi dahil; farklı sürüm gerekirse komutu [pytorch.org](https://pytorch.org/get-started/locally/) sayfasından alın):
+
+   ```powershell
+   py -3 -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+   py -3 -m pip install -r requirements-tts.txt
+   ```
+
+2. Proje klasöründe `BUILD_TTS.cmd` çalıştırın (tek motor için `BUILD_TTS.cmd ema` ya da `BUILD_TTS.cmd voxcpm`). Paketler `dist-engines\cevirgec-ses-<motor>-win64.zip` olarak oluşur. EMA paketi, ortamdaki PyTorch ile paketlenir: CUDA'lı PyTorch ile birkaç GB olur ve ekran kartını kullanır; CUDA'sız PyTorch ile derlenirse yalnızca CPU ile çalışır (betik bu durumda uyarır).
+3. Çevirgeç'te **Ayarlar → Sesli okuma → Dosyadan kur** ile zip'i seçin. Paket programın klasöründe `ses-motorlari\<motor>\` altına açılır. Aynı motoru yeniden kurmak (güncellemek) indirilmiş modelleri ve sesleri korur; **Kaldır** motoru ve dosyalarını siler.
+
+Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurulamaz; klasör yolu çok uzunsa (Windows 260 karakter sınırı) kurulum anlaşılır bir mesajla reddedilir. Bu durumlarda Çevirgeç'i kısa ve yazılabilir bir klasöre (ör. `C:\Cevirgec`) taşıyın.
+
+**Kaynak koddan çalışırken** paket gerekmez: `requirements-tts.txt` kuruluysa motorlar doğrudan Python paketlerinden çalışır.
+
+### Ses seçimi
+
+**Ayarlar → Sesli okuma → Ses** ile kitapları hangi motorun okuyacağı seçilir. Kurulu motorlar yalnızca Türkçe okur. Seçim yapılmazsa Türkçe için EMA, diğer diller için o dili destekleyen ilk motor kullanılır. Kitabın dili EPUB'daki `dc:language` bilgisinden alınır; bilgi yoksa Türkçe varsayılır. Kurulu motorlarda o dil yoksa okuyucu bunu söyler ve Ayarlar'a yönlendirir.
+
+### VoxCPM sesleri
+
+- **Trendyol-TTS (Türkçe anlatıcı):** Türkçe için ince ayar yapılmış, en doğal seçenek.
+- **Tarifle tasarlanan ses:** Ayarlar'daki **Ses tarifi** alanına anlatıcıyı yazın (ör. `A calm, warm middle-aged male narrator reading an audiobook`; İngilizce tarif daha iyi sonuç verebilir). Ses ilk seferde bir kez oluşturulup saklanır ve her cümle ondan üretilir; böylece anlatıcı kitap boyunca değişmez. Tarifi değiştirmek yeni bir ses oluşturur.
+- **Kayıttan klonlanan ses:** **Ses kaydı** ile hakkına sahip olduğunuz 5-30 saniyelik temiz bir konuşma kaydı seçin; **Kaydın metni** verilirse benzerlik artar. Başkalarının seslerini (ör. ticari uygulamaların anlatıcıları) izinsiz klonlamayın.
+
+Sayılar, tarihler, saatler ve kısaltmalar okunmadan önce Türkçe yazıya çevrilir (`14:30'da` → "on dört otuzda"). Hız ayarı sesin perdesini değiştirmeden uygulanır.
+
+### Kullanım
+
+- Okuyucunun altındaki ▶ düğmesi, ekranda görünen ilk cümleden okumaya başlar. İlk basışta motor başlatılır ve gerekirse model/ses indirilir; aşamalar oynatıcıda ve Ayarlar'da görünür.
+- Okunan cümle vurgulanır ve gerekirse sayfa kendiliğinden kayar. Okuma sürerken bir cümleye tıklamak oradan devam ettirir.
+- ⏮ / ⏭ önceki ve sonraki cümleye geçer, ■ okumayı bitirir; okuma sırasında `Boşluk` tuşu duraklatır/sürdürür.
+- Hız düğmesi 0,8× ile 2× arasında döner; yeni hız bir sonraki cümleden itibaren uygulanır.
+- Bölüm bitince bir sonraki bölüme geçilir ve okuma sürer.
+- **Hazırla** (oynatıcıda): bölümün ya da buradan kitabın sonuna kadar bütün bölümlerin sesini arka planda üretip saklar; ilerleme düğmede görünür, düğmeye tekrar basmak durdurur. Hazırlanmış bölüm "Hazır" olarak işaretlenir ve ses motoru hiç yüklenmeden anında okunur. VoxCPM gibi anlık okumaya yetmeyecek kadar yavaş motorlarla kitabı önceden (ör. bir gece boyunca) hazırlamak için kullanın. Sesler kitap, motor, ses ayarı ve hıza göre `ses-onbellegi\<kitap>\` altında tutulur; hızı ya da sesi değiştirmek yeniden hazırlamayı gerektirir. **Ayarlar → Sesli okuma → Hazırlanan sesler** toplam boyutu gösterir ve hepsini siler (yaklaşık saatte 350 MB).
+- **Kaydet**, açık bölümü WAV dosyası olarak kaydeder (48 kHz); hazırlanmış cümleler önbellekten alınır, ilerleme düğmede görünür.
+- Bir motor çökerse okuma durur ve hata ayrıntısı gösterilir; motorun günlüğü `ses-motorlari\<motor>\worker.log` dosyasındadır. Okumayı yeniden başlatmak motoru da yeniden başlatır.
+
+### Yeni ses motoru eklemek (geliştiriciler için)
+
+Her motor `engines/<ad>/` altında bir `worker.py` (bkz. `engines/protocol.py`: `load` ve `say` komutlarını uygulayan bir `Engine` sınıfı) ve onu tanımlayan bir `motor.json`'dan (kimlik, ad, sürüm, `protocol: 1`, Python modülü, gerekli paketler, sesler ve dilleri) oluşur. `BUILD_TTS.cmd` her motoru `dist-engines\cevirgec-ses-<id>-win64.zip` olarak paketler; özel PyInstaller seçenekleri `build_engines.py` içindeki `OPTIONS` sözlüğündedir.
 
 ## Özel terim sözlüğü
 
@@ -135,7 +210,7 @@ Sözlük isteğe bağlıdır ve `glossary.json` içinde proje bazında saklanır
 
 Düzeltme yine başarısızsa varsayılan davranış ayrıntıyı `glossary_fixes.log` dosyasına yazıp daha az eksik sonuçla devam etmektir. **Katı sözlük** açıksa bölüm durur ve geçersiz sonuç kaydedilmez. Türkçe çekimli biçimler belirli ek ve ses değişimi kurallarıyla kabul edilir.
 
-**Terim düzenle** ile terim eklenir, kaldırılır veya karşılığı değiştirilirse uygulama bu terimin geçtiği tamamlanmış bölümleri bulur ve yeniden çevirmeyi önerir. Henüz çevrilmemiş bölümler zaten güncel sözlüğü kullanır.
+**Terim sözlüğü** ile terim eklenir, kaldırılır veya karşılığı değiştirilirse uygulama bu terimin geçtiği tamamlanmış bölümleri bulur ve yeniden çevirmeyi önerir. Henüz çevrilmemiş bölümler zaten güncel sözlüğü kullanır.
 
 Çalışan bölümün sözlüğü checkpoint'e sabitlenir. Tamamlanmamış bölümün kaynak, prompt veya glossary dosyasını elle değiştirmek güvenlik hatasına neden olur.
 
@@ -208,7 +283,7 @@ Kitabın yaklaşık %25, %50 ve %75 noktalarında, ayrıca bir sonraki bölümü
 
 ## Ayarlar
 
-Emin değilseniz varsayılan değerleri koruyun. **Varsayılan ayarlara dön** güvenli başlangıç değerlerini geri yükler.
+Emin değilseniz varsayılan değerleri koruyun. **Varsayılanlar** güvenli başlangıç değerlerini geri yükler; değişiklikler **Kaydet** ile uygulanır. Çeviri sürerken LM Studio ve model ayarları kilitlidir. Koyu/açık tema da bu sekmeden (ya da kenar çubuğundaki düğmeden) seçilir ve `ui.json` dosyasında saklanır.
 
 | Grup | Ayar | İşlevi |
 |---|---|---|
@@ -315,9 +390,10 @@ GUI ve CLI aynı `TranslationEngine` sınıfını kullanır; çeviri ve checkpoi
 ## Windows EXE oluşturma
 
 1. Proje klasöründe `BUILD.cmd` çalıştırılır.
-2. Sabitlenmiş PySide6/PyInstaller bağımlılıkları yüklenir.
-3. `dist\Cevirgec.exe` oluşturulur.
-4. `config.json` ve `translation_prompt.txt` EXE'nin yanına kopyalanır.
+2. Sabitlenmiş pywebview/PyInstaller bağımlılıkları yüklenir.
+3. `web` klasöründe arayüz derlenir (`npm ci`, `npm run build`); Node.js gereklidir.
+4. `dist\Cevirgec.exe` oluşturulur.
+5. `config.json` ve `translation_prompt.txt` EXE'nin yanına kopyalanır.
 
 PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı için başlangıç birkaç saniye sürebilir. İmzasız PyInstaller uygulamaları bazı antivirüs ürünlerinde yanlış pozitif oluşturabilir. Linux ve macOS için hazır paketleme komut dosyası sağlanmaz.
 
@@ -325,7 +401,14 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 
 | Dosya | Görevi |
 |---|---|
-| `gui.py` | PySide6 arayüzü ve kullanıcı etkileşimi |
+| `desktop.py` | Masaüstü giriş noktası; arayüzü pywebview (WebView2) penceresinde açar |
+| `bridge.py` | Arayüzden bağımsız uygulama denetleyicisi; arayüzün çağırdığı işlemler ve olaylar |
+| `web/` | Svelte arayüz kaynak kodu (`npm run build` ile `web/dist` oluşur) |
+| `epub_meta.py` | EPUB başlık, yazar ve kapak bilgisi |
+| `tts.py` | Ses motorları: bulma, dil başına seçim, motor süreçleri, zip'ten kurulum, WAV kaydı |
+| `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA ve VoxCPM işçileri, `motor.json` tanımları |
+| `build_engines.py`, `BUILD_TTS.cmd` | Ses motoru paketlerini derleme |
+| `reader.py` | Okuma sekmesi: kitaplık (`library.json`) ve EPUB bölümlerini güvenli HTML'e dönüştürme |
 | `app_core.py` | Ayarlar, LM Studio istemcisi, çeviri/analiz/checkpoint çekirdeği |
 | `epub_import.py` | EPUB'u proje ve Markdown bölümlerine dönüştürme |
 | `epub_output.py` | Çevrilmiş EPUB'u üretme ve doğrulama |
@@ -334,6 +417,10 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `config.json` | Kalıcı kullanıcı ayarları |
 | `requirements.txt` | Sabitlenmiş çalışma ve derleme bağımlılıkları |
 | `tests/test_core.py` | Çekirdek, checkpoint ve EPUB testleri |
+| `tests/test_bridge.py` | Arayüz denetleyicisi akış testleri |
+| `tests/test_reader.py` | Okuyucu, HTML temizleme ve kitaplık testleri |
+| `tests/test_tts.py` | Ses motoru yöneticisi testleri (sahte motor gerçek alt süreç olarak) |
+| `requirements-tts.txt` | Kaynak koddan sesli okuma ve motor derleme bağımlılıkları |
 
 ## Testler
 

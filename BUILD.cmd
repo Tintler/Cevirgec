@@ -6,12 +6,27 @@ cd /d "%~dp0"
 py -3 -m pip install -r requirements.txt
 if errorlevel 1 goto :error
 
+pushd web
+call npm ci
+if errorlevel 1 (popd & goto :error)
+call npm run build
+if errorlevel 1 (popd & goto :error)
+popd
+
 py -3 -m PyInstaller --noconfirm --clean --onefile --windowed ^
   --name Cevirgec ^
   --icon "assets\app.ico" ^
   --add-data "translation_prompt.txt;." ^
   --add-data "assets;assets" ^
-  gui.py
+  --add-data "web\dist;web\dist" ^
+  --add-data "engines\ema\motor.json;engines\ema" ^
+  --add-data "engines\voxcpm\motor.json;engines\voxcpm" ^
+  --exclude-module voxcpm ^
+  --exclude-module PySide6 ^
+  --exclude-module ema_lightning ^
+  --exclude-module torch ^
+  --exclude-module numpy ^
+  desktop.py
 if errorlevel 1 goto :error
 
 copy /Y config.json dist\config.json >nul
@@ -22,6 +37,6 @@ exit /b 0
 
 :error
 echo.
-echo DERLEME BASARISIZ.
+echo DERLEME BASARISIZ. Python ve Node.js kurulu oldugundan emin olun.
 pause
 exit /b 1

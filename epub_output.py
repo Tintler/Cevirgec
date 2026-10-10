@@ -39,6 +39,24 @@ def safe_member(name):
     return value
 
 
+def _emphasis(escaped):
+    """**kalin**, *italik* ve ***ikisi*** isaretlerini iyi bicimli etiketlere cevirir.
+
+    Capraz veya dengesiz isaretler (or. ``***a** b*``) XHTML'i bozmasin diye
+    sonuc etiket yigini ile denetlenir; tutarsizsa isaretler metin olarak kalir.
+    """
+    result = re.sub(r'\*\*\*([^*]+?)\*\*\*', r'<strong><em>\1</em></strong>', escaped)
+    result = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', result)
+    result = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', result)
+    stack = []
+    for closing, tag in re.findall(r'<(/?)(strong|em)>', result):
+        if not closing:
+            stack.append(tag)
+        elif not stack or stack.pop() != tag:
+            return escaped
+    return escaped if stack else result
+
+
 def inline_markup(text, asset_map, link_map=None, current_href=''):
     """Markdown satir ici isaretlerini XHTML'e cevirir.
 
@@ -96,8 +114,7 @@ def inline_markup(text, asset_map, link_map=None, current_href=''):
         text = text[:start] + value + text[end:]
     escaped = html.escape(text, quote=False)
     escaped = re.sub(r'\^([^\^\s][^\^\n]{0,20}?)\^', r'<sup>\1</sup>', escaped)
-    escaped = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', escaped)
-    escaped = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', escaped)
+    escaped = _emphasis(escaped)
     for key, replacement in placeholders.items():
         escaped = escaped.replace(key, replacement)
     return escaped

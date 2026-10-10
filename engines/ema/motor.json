@@ -1,0 +1,17 @@
+{
+  "id": "ema-lightning",
+  "name": "EMA Lightning",
+  "version": "1.1.0",
+  "protocol": 1,
+  "description": "Küçük ve çok hızlı Türkçe ses; 34 MB model, CPU'da da anlık okur.",
+  "license": "Apache-2.0",
+  "homepage": "https://huggingface.co/canberkkkkkk/ema-lightning",
+  "entry": "worker.exe",
+  "module": "engines.ema.worker",
+  "python_modules": ["ema_lightning", "torch"],
+  "speed": true,
+  "devices": ["auto", "cpu", "cuda"],
+  "voices": [
+    {"id": "default", "name": "EMA Lightning", "language": "tr", "size_mb": 34, "files": []}
+  ]
+}

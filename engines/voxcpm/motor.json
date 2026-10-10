@@ -1,0 +1,30 @@
+{
+  "id": "voxcpm",
+  "name": "VoxCPM",
+  "version": "2.0.3",
+  "protocol": 1,
+  "description": "Doğal ve akıcı Türkçe anlatım (Trendyol-TTS), ayrıca tarifle tasarlanan ya da bir kayıttan klonlanan ses. NVIDIA ekran kartı önerilir (~8 GB bellek); model ilk kullanımda ~5 GB iner.",
+  "license": "MIT (Trendyol-TTS), Apache-2.0 (VoxCPM2)",
+  "homepage": "https://huggingface.co/Trendyol/Trendyol-TTS",
+  "entry": "worker.exe",
+  "module": "engines.voxcpm.worker",
+  "python_modules": ["voxcpm", "torch", "normalizer_tr"],
+  "speed": true,
+  "devices": ["auto", "cpu", "cuda"],
+  "voices": [
+    {"id": "trendyol", "name": "Trendyol-TTS (Türkçe anlatıcı)", "language": "tr", "size_mb": 5100, "files": []},
+    {"id": "design", "name": "VoxCPM2 · tarifle tasarlanan ses", "language": "tr", "size_mb": 5000, "files": [],
+     "options": [
+       {"key": "description", "label": "Ses tarifi", "type": "text",
+        "default": "A calm, warm middle-aged male narrator reading an audiobook",
+        "hint": "Anlatıcıyı tarif edin (İngilizce tarif daha iyi sonuç verebilir). Tarif değişince ses yeniden oluşturulur."}
+     ]},
+    {"id": "clone", "name": "VoxCPM2 · kayıttan klonlanan ses", "language": "tr", "size_mb": 5000, "files": [],
+     "options": [
+       {"key": "reference", "label": "Ses kaydı", "type": "file",
+        "hint": "Hakkına sahip olduğunuz 5-30 saniyelik temiz bir konuşma kaydı (WAV, MP3, FLAC)."},
+       {"key": "reference_text", "label": "Kaydın metni (isteğe bağlı)", "type": "text",
+        "hint": "Kayıtta söylenenlerin tam metni; verilirse benzerlik artar."}
+     ]}
+  ]
+}

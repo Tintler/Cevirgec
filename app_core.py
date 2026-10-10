@@ -1,4 +1,4 @@
-"""Shared translation engine used by both the CLI and the PySide6 GUI."""
+"""Shared translation engine used by both the CLI and the desktop interface (bridge.py)."""
 from __future__ import annotations
 
 import hashlib
