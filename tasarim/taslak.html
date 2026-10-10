@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Çevirgeç v2 Taslak</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --window: #09090b; --panel: #111114; --surface: #18181b; --surface-hover: #1f1f23;
+  --surface-active: #27272a; --outline: #26262b; --text: #ececef; --secondary: #a1a1aa;
+  --dim: #6b6b74; --accent: #f0b429; --accent-hover: #f5c451; --on-accent: #120e02;
+  --ok: #4ade80; --danger: #f87171; --hl: rgba(240,180,41,.18); --paper: #111114; --ink: #dcdce0;
+}
+:root[data-theme="light"] {
+  --window: #f6f6f8; --panel: #ffffff; --surface: #eeeef1; --surface-hover: #e4e4e8;
+  --surface-active: #d9d9de; --outline: #e2e2e7; --text: #16161a; --secondary: #55555e;
+  --dim: #8b8b94; --accent: #c98a00; --accent-hover: #b07800; --on-accent: #fff;
+  --ok: #16a34a; --danger: #dc2626; --hl: rgba(240,180,41,.28); --paper: #fbfaf7; --ink: #26241f;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--window); color: var(--text); font: 14px/1.45 Inter, system-ui, sans-serif; overflow: hidden; }
+svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.app { display: grid; grid-template-columns: 232px 1fr; height: 100vh; }
+
+/* Kenar çubuğu */
+.side { background: var(--panel); border-right: 1px solid var(--outline); display: flex; flex-direction: column; padding: 18px 12px; gap: 4px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 20px; font-weight: 700; font-size: 19px; }
+.brand svg { width: 32px; height: 32px; }
+.nav { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; color: var(--secondary); font-weight: 600; font-size: 15px; width: 100%; text-align: left; }
+.nav:hover { background: var(--surface-hover); color: var(--text); }
+.nav.on { background: var(--surface); color: var(--text); }
+.nav.on svg { color: var(--accent); }
+.side .grow { flex: 1; }
+.lm { margin: 8px 4px 0; padding: 12px; border-radius: 12px; background: var(--surface); font-size: 12px; }
+.lm .row { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+.lm .m { color: var(--secondary); margin-top: 6px; word-break: break-all; }
+.lm .c { color: var(--dim); }
+
+/* Ana alan */
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.top { display: flex; align-items: center; gap: 10px; padding: 16px 28px 0; }
+.top h1 { font-size: 28px; font-weight: 700; letter-spacing: -.02em; flex: 1; }
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--surface); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.btn:hover { background: var(--surface-hover); }
+.btn.pri { background: var(--accent); color: var(--on-accent); }
+.btn.pri:hover { background: var(--accent-hover); }
+.btn.lg { height: 42px; padding: 0 22px; font-size: 14px; }
+.icon-btn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--secondary); }
+.icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+.screen { display: none; flex: 1; min-height: 0; }
+.screen.on { display: flex; }
+
+/* Çeviri ekranı */
+.tr { flex-direction: column; padding: 18px 28px 0; gap: 16px; min-height: 0; }
+.book { display: flex; gap: 18px; align-items: center; padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--outline); }
+.cover { width: 64px; height: 92px; border-radius: 6px; flex: none; display: flex; align-items: flex-end; padding: 6px; font: 600 9px/1.2 Inter; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.book .meta { flex: 1; min-width: 0; }
+.book .t { font-size: 18px; font-weight: 700; }
+.book .a { color: var(--secondary); }
+.paths { display: flex; gap: 18px; margin-top: 8px; font-size: 12px; color: var(--dim); }
+.paths span { display: inline-flex; gap: 6px; align-items: center; min-width: 0; }
+.paths svg.i { width: 14px; height: 14px; }
+.stats { display: flex; gap: 22px; padding: 0 8px; }
+.stat b { display: block; font-size: 20px; }
+.stat small { color: var(--dim); font-size: 12px; }
+.work { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--outline); border-radius: 14px; min-height: 0; display: flex; flex-direction: column; }
+.card-h { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; font-weight: 700; }
+.card-h .sp { flex: 1; }
+.card-h small { color: var(--dim); font-weight: 500; }
+.chapters { overflow: auto; padding: 0 8px 8px; }
+.ch { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.ch:hover { background: var(--surface-hover); }
+.ch.sel { background: var(--surface); }
+.ch .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--surface-active); color: var(--secondary); }
+.badge.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.badge.run { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.tabs { display: flex; gap: 6px; padding: 12px 14px 0; }
+.tab { padding: 6px 14px; border-radius: 999px; font-weight: 600; font-size: 13px; color: var(--secondary); }
+.tab.on { background: var(--text); color: var(--window); }
+.tab:not(.on):hover { background: var(--surface-hover); }
+.pane { display: none; flex: 1; min-height: 0; }
+.pane.on { display: flex; }
+.pv { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; gap: 1px; background: var(--outline); margin: 12px 14px 14px; border-radius: 10px; overflow: hidden; }
+.pv > div { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+.pv .lbl { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); padding: 10px 16px; border-bottom: 1px solid var(--outline); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.pv .txt { padding: 14px 16px; overflow: auto; color: var(--secondary); line-height: 1.65; }
+.pv .txt p + p { margin-top: 12px; }
+.pv .tr-col .txt { color: var(--text); }
+.term { color: var(--accent); font-weight: 600; }
+.status { flex: 1; padding: 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-content: start; }
+.tile { background: var(--surface); border-radius: 12px; padding: 14px; }
+.tile small { color: var(--dim); font-size: 12px; }
+.tile b { display: block; font-size: 18px; margin-top: 4px; }
+.console { flex: 1; margin: 12px 14px 14px; padding: 12px 14px; border-radius: 10px; background: var(--window); font: 12px/1.7 ui-monospace, Consolas, monospace; color: var(--secondary); overflow: auto; }
+.console .ok { color: var(--ok); } .console .w { color: var(--accent); }
+.bar { display: flex; align-items: center; gap: 16px; padding: 14px 28px; margin: 16px -28px 0; border-top: 1px solid var(--outline); background: var(--panel); }
+.prog { flex: 1; display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--dim); }
+.track { flex: 1; height: 4px; border-radius: 4px; background: var(--surface-active); overflow: hidden; }
+.track > i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--secondary); cursor: pointer; }
+.sw { width: 34px; height: 20px; border-radius: 999px; background: var(--surface-active); position: relative; transition: .15s; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--secondary); transition: .15s; }
+.toggle.on .sw { background: var(--accent); }
+.toggle.on .sw::after { left: 17px; background: var(--on-accent); }
+
+/* Okuma: kitaplık */
+.lib { flex-direction: column; padding: 18px 28px; gap: 22px; overflow: auto; }
+.lib h2 { font-size: 20px; font-weight: 700; }
+.shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 22px; }
+.bk { cursor: pointer; padding: 10px; border-radius: 12px; }
+.bk:hover { background: var(--surface); }
+.bk .cv { aspect-ratio: 2/3; border-radius: 6px; display: flex; flex-direction: column; justify-content: space-between; padding: 12px; color: #fff; box-shadow: 0 10px 24px rgba(0,0,0,.35); font-weight: 700; font-size: 14px; line-height: 1.2; }
+.bk .cv small { font-weight: 500; font-size: 11px; opacity: .8; }
+.bk .t { margin-top: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk .s { color: var(--dim); font-size: 12px; }
+.bk .p { height: 3px; border-radius: 3px; background: var(--surface-active); margin-top: 8px; overflow: hidden; }
+.bk .p i { display: block; height: 100%; background: var(--accent); }
+.drop { border: 2px dashed var(--outline); border-radius: 12px; display: grid; place-items: center; text-align: center; color: var(--dim); aspect-ratio: 2/3; margin: 10px; font-size: 13px; gap: 6px; align-content: center; }
+.drop:hover { border-color: var(--accent); color: var(--accent); }
+.hero { display: flex; gap: 22px; align-items: center; padding: 20px; border-radius: 16px; background: linear-gradient(120deg, color-mix(in srgb, #5b3fa8 45%, var(--panel)), var(--panel) 70%); border: 1px solid var(--outline); }
+.hero .cv { width: 96px; aspect-ratio: 2/3; border-radius: 6px; padding: 10px; color: #fff; font-weight: 700; display: flex; align-items: flex-end; box-shadow: 0 10px 24px rgba(0,0,0,.4); }
+.hero .k { font-size: 12px; font-weight: 600; color: var(--secondary); text-transform: uppercase; letter-spacing: .06em; }
+.hero .t { font-size: 24px; font-weight: 700; margin: 4px 0; }
+.hero .s { color: var(--secondary); margin-bottom: 14px; }
+
+/* Okuma: okuyucu */
+.reader { flex-direction: column; min-height: 0; }
+.rd-top { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-bottom: 1px solid var(--outline); }
+.rd-top .ttl { flex: 1; min-width: 0; }
+.rd-top .ttl b { display: block; }
+.rd-top .ttl small { color: var(--dim); }
+.rd-body { flex: 1; display: flex; min-height: 0; }
+.toc { width: 260px; border-right: 1px solid var(--outline); overflow: auto; padding: 12px 8px; background: var(--panel); }
+.toc .h { padding: 6px 12px 10px; font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+.toc a { display: block; padding: 7px 12px; border-radius: 8px; color: var(--secondary); text-decoration: none; font-size: 13px; }
+.toc a:hover { background: var(--surface-hover); color: var(--text); }
+.toc a.on { color: var(--accent); background: var(--surface); font-weight: 600; }
+.page-wrap { flex: 1; overflow: auto; background: var(--paper); }
+.page { max-width: 680px; margin: 0 auto; padding: 48px 32px 80px; font: 19px/1.75 Literata, Georgia, serif; color: var(--ink); }
+.page h2 { font: 600 28px/1.3 Literata, Georgia, serif; margin-bottom: 28px; text-align: center; }
+.page .cn { text-align: center; font: 600 12px Inter; letter-spacing: .14em; color: var(--dim); margin-bottom: 8px; }
+.page p { text-indent: 1.5em; margin-bottom: .2em; }
+.page p.first { text-indent: 0; }
+.page .s { border-radius: 4px; transition: background .2s; cursor: pointer; }
+.page .s:hover { background: color-mix(in srgb, var(--hl) 50%, transparent); }
+.page .s.now { background: var(--hl); box-shadow: 0 0 0 2px var(--hl); }
+.aa { position: absolute; right: 24px; top: 112px; width: 260px; background: var(--panel); border: 1px solid var(--outline); border-radius: 14px; padding: 14px; box-shadow: 0 16px 40px rgba(0,0,0,.4); display: none; z-index: 5; }
+.aa.on { display: block; }
+.aa .r { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 13px; color: var(--secondary); }
+.seg { display: flex; background: var(--surface); border-radius: 999px; padding: 3px; }
+.seg button { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--secondary); }
+.seg button.on { background: var(--surface-active); color: var(--text); }
+.sw-paper { display: flex; gap: 8px; }
+.sw-paper i { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--outline); display: block; cursor: pointer; }
+.sw-paper i.on { border-color: var(--accent); }
+
+/* TTS çubuğu */
+.player { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; padding: 12px 20px; border-top: 1px solid var(--outline); background: var(--panel); }
+.np { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.np .cv { width: 40px; height: 56px; border-radius: 4px; flex: none; }
+.np b { display: block; font-size: 13px; }
+.np small { color: var(--dim); font-size: 12px; }
+.ctl { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ctl .b { display: flex; align-items: center; gap: 10px; }
+.play { width: 40px; height: 40px; border-radius: 50%; background: var(--text); color: var(--window); display: grid; place-items: center; }
+.play:hover { transform: scale(1.05); }
+.ctl .tl { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--dim); width: 420px; }
+.ctl .tl .track { height: 4px; }
+.rt { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.chip { height: 30px; padding: 0 12px; border-radius: 999px; background: var(--surface); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.chip:hover { background: var(--surface-hover); }
+.chip.acc { color: var(--accent); }
+.note { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); background: var(--surface-active); color: var(--secondary); font-size: 12px; padding: 6px 14px; border-radius: 999px; pointer-events: none; opacity: .9; }
+
+/* Ayarlar */
+.set { flex-direction: column; padding: 18px 28px; gap: 16px; overflow: auto; max-width: 820px; }
+.set .card { padding: 6px 18px; }
+.set h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); padding: 12px 0 4px; }
+.fr { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--outline); }
+.fr:first-of-type { border-top: 0; }
+.fr .l { flex: 1; }
+.fr .l small { display: block; color: var(--dim); font-size: 12px; }
+.inp { height: 34px; border-radius: 8px; background: var(--surface); border: 1px solid var(--outline); color: var(--text); padding: 0 10px; font: inherit; font-size: 13px; width: 260px; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 64px 1fr; }
+  .brand span, .nav span, .lm { display: none; }
+  .work { grid-template-columns: 1fr; }
+  .toc { display: none; }
+  .ctl .tl { width: 200px; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-lang" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor"/><line x1="5" x2="5" y1="19" y2="5"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4" fill="currentColor"/><line x1="19" x2="19" y1="5" y2="19"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/></symbol>
+  <symbol id="i-type" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+  <symbol id="i-dict" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M8 11h8"/><path d="M8 7h6"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 18.4a9 9 0 0 0 0-12.7"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-headph" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="#1b1b1f"/><g transform="skewX(-12) translate(15,0)"><g fill="#f0b429"><path d="M18 18 L56 18 L56 40 L18 40 Z"/><path d="M56 12 L56 46 L80 29 Z"/><rect x="18" y="18" width="24" height="64"/><path d="M18 60 L58 60 L70 82 L18 82 Z"/></g><rect x="36" y="65" width="12" height="12" rx="3" fill="#1b1b1f"/></g></svg>
+      <span>Çevirgeç</span>
+    </div>
+    <button class="nav on" data-go="tr"><svg class="i"><use href="#i-lang"/></svg><span>Çeviri</span></button>
+    <button class="nav" data-go="lib"><svg class="i"><use href="#i-book"/></svg><span>Okuma</span></button>
+    <button class="nav" data-go="set"><svg class="i"><use href="#i-gear"/></svg><span>Ayarlar</span></button>
+    <div class="grow"></div>
+    <div class="lm">
+      <div class="row"><span class="dot"></span>LM Studio bağlı</div>
+      <div class="m">gemma-4-26b-a4b-it-qat@q4_k_xl</div>
+      <div class="c">32.768 context</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ÇEVİRİ -->
+    <section class="screen tr on" id="tr">
+      <div class="top" style="padding:0">
+        <h1>Çeviri</h1>
+        <button class="btn"><svg class="i"><use href="#i-history"/></svg>Projeyi sürdür</button>
+        <button class="btn"><svg class="i"><use href="#i-file"/></svg>EPUB aç</button>
+        <button class="icon-btn theme" title="Tema"><svg class="i"><use href="#i-moon"/></svg></button>
+      </div>
+      <div class="book">
+        <div class="cover" style="background:linear-gradient(160deg,#7c3aed,#1e1b4b)">The Wandering Bard</div>
+        <div class="meta">
+          <div class="t">The Wandering Bard</div>
+          <div class="a">Ellen Hart · 42 bölüm · 318.400 karakter</div>
+          <div class="paths">
+            <span><svg class="i"><use href="#i-file"/></svg>Z:\LLM-Files\kitap-cevir\wandering-bard.epub</span>
+            <span><svg class="i"><use href="#i-folder"/></svg>Z:\LLM-Files\kitap-cevir</span>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><b>21 / 42</b><small>bölüm</small></div>
+          <div class="stat"><b>%51</b><small>tamamlandı</small></div>
+          <div class="stat"><b>~1 sa 40 dk</b><small>kalan süre</small></div>
+        </div>
+      </div>
+      <div class="work">
+        <div class="card">
+          <div class="card-h">Bölümler <span class="sp"></span><small>42</small></div>
+          <div class="chapters" id="chapters"></div>
+        </div>
+        <div class="card">
+          <div class="tabs">
+            <button class="tab on" data-pane="p-pv">Kaynak / Türkçe</button>
+            <button class="tab" data-pane="p-st">Durum</button>
+            <button class="tab" data-pane="p-an">Ön analiz</button>
+            <button class="tab" data-pane="p-co">Konsol</button>
+          </div>
+          <div class="pane on" id="p-pv">
+            <div class="pv">
+              <div><div class="lbl"><span>Kaynak · İngilizce</span><span>19.778 karakter</span></div>
+                <div class="txt">
+                  <p>The patrons had all gone home, but the inn wasn't empty. The barkeep sat behind the counter, the <span class="term">Bard</span> was counting coins on the stage, a young man was sweeping the dance floor, and the owner Hela was gathering the tables.</p>
+                  <p>He ignored her and went straight to Jeffrey. "Can you teach me to play?"</p>
+                  <p>"It won't help," said Jeffrey. "There's no surefire way to get the <span class="term">Bard</span> Class."</p>
+                  <p>"I don't care. I've always wanted to be able to make music. I don't need a Class for that, do I?"</p>
+                </div></div>
+              <div class="tr-col"><div class="lbl"><span>Çeviri · Türkçe</span><span>20.122 karakter</span></div>
+                <div class="txt">
+                  <p>Müşterilerin hepsi evlerine dönmüştü ama han boş değildi. Barmen tezgâhın arkasında oturuyor, <span class="term">Ozan</span> sahnede altınlarını sayıyor, genç bir adam dans pistini süpürüyor, han sahibi Hela da masaları topluyordu.</p>
+                  <p>Onu görmezden geldi ve doğrudan Jeffrey'nin yanına gitti. "Bana çalmayı öğretebilir misin?"</p>
+                  <p>"İşe yaramaz," dedi Jeffrey. "<span class="term">Ozan</span> Sınıfı'nı almanın kesin bir yolu yok."</p>
+                  <p>"Umrumda değil. Her zaman müzik yapabilmeyi istemişimdir. Bunun için bir Sınıf'a ihtiyacım yok, değil mi?"</p>
+                </div></div>
+            </div>
+          </div>
+          <div class="pane" id="p-st">
+            <div class="status">
+              <div class="tile"><small>Aşama</small><b>Çeviri sürüyor</b></div>
+              <div class="tile"><small>Geçerli bölüm</small><b>Chapter 22</b></div>
+              <div class="tile"><small>Parça</small><b>4 / 9</b></div>
+              <div class="tile"><small>Hız</small><b>38 token/sn</b></div>
+              <div class="tile"><small>Yeniden deneme</small><b>0</b></div>
+              <div class="tile"><small>Uygulanan terim</small><b>14</b></div>
+            </div>
+          </div>
+          <div class="pane" id="p-an">
+            <div class="console" style="font-family:Inter;font-size:13px;line-height:1.6">
+              <b style="color:var(--text)">Kitap özeti</b><br>Bir hanın çevresinde geçen, sınıf ve beceri sistemi olan bir fantastik dünya…<br><br>
+              <b style="color:var(--text)">Karakterler</b><br>Brin · Jeffrey (Ozan) · Hela (han sahibi) · Prefit Elmon<br><br>
+              <b style="color:var(--text)">Üslup</b><br>Samimi, hafif mizahi anlatım; diyaloglarda gündelik dil.
+            </div>
+          </div>
+          <div class="pane" id="p-co">
+            <div class="console">
+              <div>[14:19:02] Bölüm 21 tamamlandı · 9 parça · 2 dk 41 sn</div>
+              <div class="ok">[14:19:03] Kontrol noktası kaydedildi</div>
+              <div>[14:19:03] Chapter 22 başladı · 9 parça</div>
+              <div>[14:19:21] Parça 1/9 · 2.140 token</div>
+              <div class="w">[14:19:37] Terim uygulandı: Bard → Ozan (3)</div>
+              <div>[14:19:52] Parça 3/9 · 2.302 token</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="bar">
+        <button class="btn"><svg class="i"><use href="#i-dict"/></svg>Terim sözlüğü</button>
+        <label class="toggle on" id="pre"><span class="sw"></span>Ön analiz</label>
+        <div class="prog"><span>Son kayıt 14:19:37</span><div class="track"><i style="width:51%"></i></div><span>%51</span></div>
+        <button class="btn pri lg" id="run"><svg class="i"><use href="#i-pause"/></svg>Duraklat</button>
+      </div>
+    </section>
+
+    <!-- OKUMA: KİTAPLIK -->
+    <section class="screen lib" id="lib">
+      <div class="top" style="padding:0">
+        <h1>Okuma</h1>
+        <button class="btn pri"><svg class="i"><use href="#i-plus"/></svg>Kitap aç</button>
+        <button class="icon-btn theme" title="Tema"><svg class="i"><use href="#i-moon"/></svg></button>
+      </div>
+      <div class="hero">
+        <div class="cv" style="background:linear-gradient(160deg,#a855f7,#312e81)">Kayıp Fener</div>
+        <div>
+          <div class="k">Okumaya devam et</div>
+          <div class="t">Kayıp Fener</div>
+          <div class="s">Bölüm 7 · Liman · %38 okundu</div>
+          <button class="btn pri" data-open><svg class="i"><use href="#i-book"/></svg>Devam et</button>
+          <button class="btn" data-open data-listen><svg class="i"><use href="#i-headph"/></svg>Sesli dinle</button>
+        </div>
+      </div>
+      <h2>Kitaplığım</h2>
+      <div class="shelf" id="shelf"></div>
+    </section>
+
+    <!-- OKUMA: OKUYUCU -->
+    <section class="screen reader" id="rd" style="position:relative">
+      <div class="rd-top">
+        <button class="icon-btn" data-go="lib" title="Kitaplık"><svg class="i"><use href="#i-back"/></svg></button>
+        <button class="icon-btn" id="tocbtn" title="İçindekiler"><svg class="i"><use href="#i-list"/></svg></button>
+        <div class="ttl"><b>Kayıp Fener</b><small>Bölüm 7 · Liman</small></div>
+        <button class="icon-btn" title="Yer imi"><svg class="i"><use href="#i-bookmark"/></svg></button>
+        <button class="icon-btn" id="aabtn" title="Görünüm"><svg class="i"><use href="#i-type"/></svg></button>
+        <button class="icon-btn theme" title="Tema"><svg class="i"><use href="#i-moon"/></svg></button>
+      </div>
+      <div class="aa" id="aa">
+        <div class="r">Yazı boyutu <div class="seg"><button>A−</button><button class="on">19</button><button>A+</button></div></div>
+        <div class="r">Yazı tipi <div class="seg"><button class="on">Serif</button><button>Sans</button></div></div>
+        <div class="r">Satır aralığı <div class="seg"><button>Sık</button><button class="on">Normal</button><button>Geniş</button></div></div>
+        <div class="r">Sayfa <div class="sw-paper"><i class="on" style="background:#111114"></i><i style="background:#f4ecd8"></i><i style="background:#fbfaf7"></i></div></div>
+      </div>
+      <div class="rd-body">
+        <nav class="toc" id="toc">
+          <div class="h">İçindekiler</div>
+          <a>Kapak</a><a>1. Sis</a><a>2. Bekçinin Defteri</a><a>3. Kuzey Rüzgârı</a><a>4. Eski Kayıtlar</a>
+          <a>5. Fırtınadan Önce</a><a>6. Mektup</a><a class="on">7. Liman</a><a>8. Kayık</a><a>9. Fener Kulesi</a><a>10. Işık</a>
+        </nav>
+        <div class="page-wrap"><article class="page" id="page"></article></div>
+      </div>
+      <div class="player">
+        <div class="np">
+          <div class="cv" style="background:linear-gradient(160deg,#a855f7,#312e81)"></div>
+          <div><b>Bölüm 7 · Liman</b><small id="sent-no">Cümle 3 / 48</small></div>
+        </div>
+        <div class="ctl">
+          <div class="b">
+            <button class="icon-btn" id="prev" title="Önceki cümle"><svg class="i"><use href="#i-prev"/></svg></button>
+            <button class="play" id="play"><svg class="i"><use href="#i-play"/></svg></button>
+            <button class="icon-btn" id="next" title="Sonraki cümle"><svg class="i"><use href="#i-next"/></svg></button>
+          </div>
+          <div class="tl"><span>2:14</span><div class="track"><i id="tlbar" style="width:12%"></i></div><span>18:40</span></div>
+        </div>
+        <div class="rt">
+          <button class="chip acc" id="speed">1.0×</button>
+          <button class="chip"><svg class="i" style="width:14px;height:14px"><use href="#i-headph"/></svg>EMA Lightning</button>
+          <button class="chip" title="Bölümü ses dosyası olarak kaydet"><svg class="i" style="width:14px;height:14px"><use href="#i-down"/></svg>Kaydet</button>
+          <button class="icon-btn"><svg class="i"><use href="#i-vol"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- AYARLAR -->
+    <section class="screen set" id="set">
+      <div class="top" style="padding:0"><h1>Ayarlar</h1><button class="icon-btn theme" title="Tema"><svg class="i"><use href="#i-moon"/></svg></button></div>
+      <div class="card">
+        <h3>LM Studio ve model</h3>
+        <div class="fr"><div class="l">Sunucu adresi</div><input class="inp" value="http://127.0.0.1:1234/v1"></div>
+        <div class="fr"><div class="l">Model<small>LM Studio'da yüklü modeller</small></div><input class="inp" value="gemma-4-26b-a4b-it-qat@q4_k_xl"></div>
+      </div>
+      <div class="card">
+        <h3>Kitap ve EPUB</h3>
+        <div class="fr"><div class="l">EPUBCheck ile doğrula<small>Üretilen EPUB harici araçla denetlenir</small></div><label class="toggle"><span class="sw"></span></label></div>
+        <div class="fr"><div class="l">Uygulanamayan terimde durdur</div><label class="toggle"><span class="sw"></span></label></div>
+      </div>
+      <div class="card">
+        <h3>Sesli okuma</h3>
+        <div class="fr"><div class="l">Ses modeli<small>EMA Lightning · Türkçe · çevrimdışı · 34 MB</small></div><span class="badge ok">Yüklü</span></div>
+        <div class="fr"><div class="l">İşlemci<small>NVIDIA ekran kartı yoksa CPU kullanılır</small></div><div class="seg"><button class="on">Otomatik</button><button>GPU</button><button>CPU</button></div></div>
+        <div class="fr"><div class="l">Varsayılan hız</div><div class="seg"><button>0.8×</button><button class="on">1.0×</button><button>1.25×</button><button>1.5×</button></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="note">Tasarım taslağı · veriler örnektir</div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+function go(id) {
+  $$('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+  const nav = id === 'rd' ? 'lib' : id;
+  $$('.nav').forEach(n => n.classList.toggle('on', n.dataset.go === nav));
+}
+$$('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+$$('.tab').forEach(t => t.onclick = () => {
+  $$('.tab').forEach(x => x.classList.toggle('on', x === t));
+  $$('.pane').forEach(p => p.classList.toggle('on', p.id === t.dataset.pane));
+});
+$$('.toggle').forEach(t => t.onclick = () => t.classList.toggle('on'));
+$$('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+}));
+$$('.theme').forEach(b => b.onclick = () => {
+  const r = document.documentElement, light = r.dataset.theme !== 'light';
+  r.dataset.theme = light ? 'light' : 'dark';
+  $$('.theme use').forEach(u => u.setAttribute('href', light ? '#i-sun' : '#i-moon'));
+});
+
+// Bölüm listesi
+const chs = ['Prologue','Chapter 1','Chapter 2','Chapter 3','Chapter 4','Chapter 5','Interlude - Prefit Elmon','Chapter 6','Chapter 7','Chapter 8','Chapter 9','Chapter 10','Chapter 11','Chapter 12','Chapter 12.5','Chapter 13','Chapter 14','Chapter 15','Chapter 16','Chapter 17','Chapter 18','Chapter 22','Chapter 23','Interlude - Hogg','Chapter 24','Chapter 25','Chapter 25.5','Chapter 26'];
+$('#chapters').innerHTML = chs.map((c, i) => {
+  const st = i < 21 ? ['ok','Tamam'] : i === 21 ? ['run','%44'] : ['','Bekliyor'];
+  return `<div class="ch${i === 21 ? ' sel' : ''}"><span class="n">${c}</span><span class="badge ${st[0]}">${st[1]}</span></div>`;
+}).join('');
+$$('.ch').forEach(c => c.onclick = () => $$('.ch').forEach(x => x.classList.toggle('sel', x === c)));
+$('#run').onclick = function () {
+  const p = this.textContent.includes('Duraklat');
+  this.innerHTML = `<svg class="i"><use href="#i-${p ? 'play' : 'pause'}"/></svg>${p ? 'Devam et' : 'Duraklat'}`;
+};
+
+// Kitaplık
+const books = [
+  ['Kayık Fener','Kayıp Fener','Deniz Aksoy','#a855f7','#312e81',38],
+  ['','Yolcu','A. Rıza Kaya','#0ea5e9','#0c4a6e',100],
+  ['','Kış Bahçesi','Selin Ergün','#22c55e','#14532d',12],
+  ['','Bakır Şehir','M. Tunç','#f97316','#7c2d12',0],
+  ['','The Wandering Bard','Ellen Hart','#7c3aed','#1e1b4b',64],
+  ['','Gece Treni','Oya Demir','#e11d48','#4c0519',5],
+];
+$('#shelf').innerHTML = books.map(b => `
+  <div class="bk" data-open>
+    <div class="cv" style="background:linear-gradient(160deg,${b[3]},${b[4]})"><span>${b[1]}</span><small>${b[2]}</small></div>
+    <div class="t">${b[1]}</div>
+    <div class="s">${b[5] === 100 ? 'Bitti' : b[5] ? '%' + b[5] + ' okundu' : 'Yeni'}</div>
+    <div class="p"><i style="width:${b[5]}%"></i></div>
+  </div>`).join('') +
+  `<div class="drop"><svg class="i" style="width:28px;height:28px"><use href="#i-plus"/></svg>EPUB sürükleyin<br>ya da tıklayın</div>`;
+$$('[data-open]').forEach(b => b.onclick = e => { go('rd'); if (b.dataset.listen !== undefined) toggle(true); });
+
+// Okuyucu metni
+const paras = [
+  'Sabahın erken saatlerinde liman henüz uyanmamıştı. Balıkçılar ağlarını sessizce topluyor, martılar ise teknelerin etrafında dönerek şanslarını deniyordu. Rıhtımın taşları gece yağan yağmurdan hâlâ ıslaktı.',
+  'Elif paltosunun yakasını kaldırdı ve iskeleye doğru yürüdü. Cebindeki mektubu üçüncü kez yokladı. Kâğıt oradaydı, katlanmış ve biraz nemlenmiş hâlde.',
+  'Fenerin ışığı on iki yıldır yanmıyordu. Kasabada herkes bunun bir nedeni olduğunu bilirdi, ama kimse yüksek sesle söylemezdi. Yaşlılar konuyu değiştirir, çocuklar ise hikâyeyi her seferinde biraz daha büyütürdü.',
+  '"Kayığa mı bineceksiniz?" diye sordu iskelenin ucunda bekleyen adam. Sesi kalın ve yorgundu.',
+  '"Adaya geçmem gerek," dedi Elif. "Bugün."',
+  'Adam bir süre denize baktı. Sonra omuz silkti ve ipi babadan çözdü.',
+];
+let n = 0;
+$('#page').innerHTML = '<div class="cn">BÖLÜM 7</div><h2>Liman</h2>' + paras.map((p, i) =>
+  `<p class="${i ? '' : 'first'}">` + p.match(/[^.!?]+[.!?]+["”]?\s*/g).map(s => `<span class="s">${s}</span>`).join('') + '</p>').join('');
+const sents = $$('#page .s');
+function mark(i) {
+  n = (i + sents.length) % sents.length;
+  sents.forEach((s, k) => s.classList.toggle('now', k === n));
+  sents[n].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  $('#sent-no').textContent = `Cümle ${n + 1} / 48`;
+  $('#tlbar').style.width = (8 + n * 2) + '%';
+}
+sents.forEach((s, k) => s.onclick = () => mark(k));
+mark(2);
+let timer = null;
+function toggle(force) {
+  const on = force ?? !timer;
+  clearInterval(timer); timer = null;
+  if (on) timer = setInterval(() => mark(n + 1), 1800);
+  $('#play use').setAttribute('href', on ? '#i-pause' : '#i-play');
+}
+$('#play').onclick = () => toggle();
+$('#prev').onclick = () => mark(n - 1);
+$('#next').onclick = () => mark(n + 1);
+const speeds = ['0.8×','1.0×','1.25×','1.5×','2.0×'];
+$('#speed').onclick = function () { this.textContent = speeds[(speeds.indexOf(this.textContent) + 1) % speeds.length]; };
+$('#tocbtn').onclick = () => { const t = $('#toc'); t.style.display = t.style.display === 'none' ? '' : 'none'; };
+$('#aabtn').onclick = () => $('#aa').classList.toggle('on');
+$$('.sw-paper i').forEach((p, k) => p.onclick = () => {
+  $$('.sw-paper i').forEach(x => x.classList.toggle('on', x === p));
+  const pal = [['',''],['#f4ecd8','#3b2f1e'],['#fbfaf7','#26241f']][k];
+  $('.page-wrap').style.background = pal[0]; $('.page').style.color = pal[1];
+});
+</script>
+</body>
+</html>
