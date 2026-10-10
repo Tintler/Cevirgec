@@ -77,8 +77,22 @@ def build(folder):
     return archive_path
 
 
+def cuda_torch():
+    import importlib.util
+    if importlib.util.find_spec('torch') is None:
+        return False
+    import torch
+    return bool(torch.version.cuda)
+
+
 def main():
-    wanted = set(sys.argv[1:])
+    allow_cuda = '--cuda' in sys.argv
+    wanted = set(sys.argv[1:]) - {'--cuda'}
+    if (not wanted or 'ema' in wanted) and not allow_cuda and cuda_torch():
+        sys.exit('Bu Python ortamında CUDA\'lı PyTorch kurulu; EMA paketi birkaç GB olur ve GitHub\'ın 2 GB dosya '
+                 'sınırını aşar. Paketi CPU PyTorch kurulu ayrı bir ortamda derleyin '
+                 '(py -3 -m venv .venv-tts, ardından pip install torch --index-url '
+                 'https://download.pytorch.org/whl/cpu ve -r requirements-tts.txt) ya da bilerek istiyorsanız --cuda ekleyin.')
     folders = [path.parent for path in sorted((ROOT / 'engines').glob('*/motor.json'))
                if not wanted or path.parent.name in wanted]
     if not folders:
