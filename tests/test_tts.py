@@ -115,8 +115,8 @@ class EnginesTests(unittest.TestCase):
         self.assertEqual((self.app / 'ses-motorlari' / 'ema-lightning' / 'data' / 'loaded.txt').read_text(), 'tr-voice')
         result = self.engines.say('  Merhaba \n dünya. ', 2.0)
         with wave.open(io.BytesIO(base64.b64decode(result['audio']))) as clip:
-            self.assertEqual(clip.getframerate(), 24000)
-            self.assertAlmostEqual(clip.getnframes() / 24000, 0.1, places=2)
+            self.assertEqual(clip.getframerate(), 48000)
+            self.assertAlmostEqual(clip.getnframes() / 48000, 0.1, places=2)
         self.assertEqual(self.engines.say('   ')['audio'], '')
         first = self.engines._worker.process.pid
         self.assertEqual(self.load('tr')['state'], 'ready')                 # same choice reuses the worker
@@ -126,7 +126,7 @@ class EnginesTests(unittest.TestCase):
         self.assertNotEqual(self.engines._worker.process.pid, first)
         path = self.app / 'out.wav'
         progress = []
-        self.assertEqual(self.engines.export(['Bir.', ' ', 'İki.'], 1.0, path, lambda d, t: progress.append((d, t))), 2)
+        self.assertEqual(self.engines.export(['Bir.', ' ', 'İki.'], 1.0, path, lambda d, t: progress.append((d, t)), language='en'), 2)
         self.assertEqual(progress, [(1, 2), (2, 2)])
         with wave.open(str(path)) as clip:
             self.assertEqual(clip.getframerate(), 48000)
@@ -144,6 +144,41 @@ class EnginesTests(unittest.TestCase):
         self.assertEqual(json.loads((data / 'options.json').read_text(encoding='utf-8')),
                          {'description': 'Sakin bir anlatıcı', 'reference': 'C:/ses/kayıt.wav'})
         self.assertEqual(self.engines._worker.process.pid, first)           # same engine: no restart
+
+    def test_prepared_sentences_play_from_cache_without_the_engine(self):
+        make_engine(self.root, 'ema-lightning', ('tr',))
+        book = 'abcdef0123456789'
+        self.load('tr')
+        first = self.engines.say('Bir cümle.', 1.0, book)
+        self.assertFalse(first['cached'])
+        self.assertTrue(self.engines.say('Bir cümle.', 1.0, book)['cached'])
+        self.assertFalse(self.engines.say('Bir cümle.', 1.5, book)['cached'])      # other speed: other audio
+        self.assertEqual(self.engines.cached(book, ['Bir cümle.', 'İki.', ' '], 1.0), 1)
+        cancel = threading.Event()
+        progress = []
+
+        def step(done, total):
+            progress.append(done)
+            if done == 2:
+                cancel.set()
+
+        self.assertEqual(self.engines.prepare(book, ['Bir cümle.', 'İki.', 'Üç.', 'Dört.'], 1.0, progress=step, cancel=cancel), 2)
+        self.assertEqual(self.engines.cached(book, ['Bir cümle.', 'İki.', 'Üç.'], 1.0), 2)
+        self.engines.shutdown()                                                   # no engine running now
+        replay = self.engines.say('İki.', 1.0, book)
+        self.assertTrue(replay['cached'])
+        self.assertEqual(base64.b64decode(replay['audio'])[:4], b'RIFF')
+        with self.assertRaises(RuntimeError):
+            self.engines.say('Üç.', 1.0, book)                                    # not prepared, no engine
+        path = self.app / 'bolum.wav'
+        self.assertEqual(self.engines.export(['Bir cümle.', 'İki.'], 1.0, path, book=book), 2)
+        self.assertTrue(path.exists())
+        self.prefs['options'] = {'ema-lightning/tr-voice': {'description': 'başka'}}
+        self.assertEqual(self.engines.cached(book, ['Bir cümle.'], 1.0), 0)       # other voice settings
+        self.prefs['options'] = {}
+        self.assertGreater(self.engines.cache_info()['files'], 0)
+        self.assertIsNone(self.engines._cache_path('../kaçak', 'x', 1.0, 'tr'))
+        self.assertEqual(self.engines.clear_cache(book)['files'], 0)
 
     def test_worker_crash_is_reported(self):
         make_engine(self.root, 'ema-lightning', ('tr',))

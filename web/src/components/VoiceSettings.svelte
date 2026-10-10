@@ -54,6 +54,23 @@
     if (path) setOption(value, key, path);
   }
 
+  let cache = $state(null);
+  const refreshCache = async () => { cache = await call('tts_cache_info'); };
+  $effect(() => { app.ttsPrepare; refreshCache(); });
+
+  async function clearCache() {
+    const yes = await confirm({
+      title: 'Hazırlanan sesleri sil',
+      message: 'Önceden üretilip saklanan bütün sesler silinecek; bu kitaplar yeniden okunurken ses yeniden üretilir. Devam edilsin mi?',
+      ok: 'Sil', cancel: 'Vazgeç',
+    });
+    if (!yes) return;
+    cache = await act('tts_cache_clear');
+    if (cache) toast('Hazırlanan sesler silindi.');
+  }
+
+  const megabytes = (bytes) => (bytes / 1e6).toLocaleString('tr-TR', { maximumFractionDigits: bytes > 1e9 ? 0 : 1 });
+
   function setDevice(value) {
     app.ttsPrefs.device = value;
     saveTtsPrefs();
@@ -147,6 +164,12 @@
   {/each}
 
   <div class="fr">
+    <div class="l">Hazırlanan sesler<small>Okuyucudaki "Hazırla" ile önceden üretilen sesler; motor yüklenmeden anında okunur.
+      Kitap başına program klasöründeki ses-onbellegi altında tutulur.</small></div>
+    <span class="dim-text">{cache ? `${cache.files.toLocaleString('tr-TR')} cümle · ${megabytes(cache.bytes)} MB` : '…'}</span>
+    <button class="btn sm" disabled={!cache?.files} onclick={clearCache}><Icon name="trash" size={14} />Temizle</button>
+  </div>
+  <div class="fr">
     <div class="l">İşlemci<small>EMA Lightning için. Otomatik: NVIDIA ekran kartı varsa onu, yoksa CPU'yu kullanır.</small></div>
     <div class="seg">
       {#each [['auto', 'Otomatik'], ['cuda', 'GPU'], ['cpu', 'CPU']] as [value, label]}
@@ -174,6 +197,7 @@
   .l small { display: block; color: var(--secondary); font-size: 12px; }
   .l small.dim { color: var(--dim); }
   .info code { font-family: var(--mono); }
+  .dim-text { font-size: 12px; color: var(--secondary); white-space: nowrap; }
   .sub { padding-left: 16px; border-top-style: dashed; }
   .path { max-width: 260px; font-size: 12px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
   .ver { color: var(--dim); font-size: 12px; margin-left: 4px; }

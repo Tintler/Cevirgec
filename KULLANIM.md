@@ -189,7 +189,8 @@ Sayılar, tarihler, saatler ve kısaltmalar okunmadan önce Türkçe yazıya çe
 - ⏮ / ⏭ önceki ve sonraki cümleye geçer, ■ okumayı bitirir; okuma sırasında `Boşluk` tuşu duraklatır/sürdürür.
 - Hız düğmesi 0,8× ile 2× arasında döner; yeni hız bir sonraki cümleden itibaren uygulanır.
 - Bölüm bitince bir sonraki bölüme geçilir ve okuma sürer.
-- **Kaydet**, açık bölümü WAV dosyası olarak kaydeder (48 kHz); ilerleme düğmede görünür.
+- **Hazırla** (oynatıcıda): bölümün ya da buradan kitabın sonuna kadar bütün bölümlerin sesini arka planda üretip saklar; ilerleme düğmede görünür, düğmeye tekrar basmak durdurur. Hazırlanmış bölüm "Hazır" olarak işaretlenir ve ses motoru hiç yüklenmeden anında okunur. VoxCPM gibi anlık okumaya yetmeyecek kadar yavaş motorlarla kitabı önceden (ör. bir gece boyunca) hazırlamak için kullanın. Sesler kitap, motor, ses ayarı ve hıza göre `ses-onbellegi\<kitap>\` altında tutulur; hızı ya da sesi değiştirmek yeniden hazırlamayı gerektirir. **Ayarlar → Sesli okuma → Hazırlanan sesler** toplam boyutu gösterir ve hepsini siler (yaklaşık saatte 350 MB).
+- **Kaydet**, açık bölümü WAV dosyası olarak kaydeder (48 kHz); hazırlanmış cümleler önbellekten alınır, ilerleme düğmede görünür.
 - Bir motor çökerse okuma durur ve hata ayrıntısı gösterilir; motorun günlüğü `ses-motorlari\<motor>\worker.log` dosyasındadır. Okumayı yeniden başlatmak motoru da yeniden başlatır.
 
 ### Yeni ses motoru eklemek (geliştiriciler için)

@@ -10,11 +10,13 @@ so development needs no packaging. Which engine and voice read a book is chosen 
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib.util
 import io
 import itertools
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
@@ -26,8 +28,8 @@ import zipfile
 
 ENGINES_DIR = 'ses-motorlari'
 PROTOCOL = 1
-PLAY_RATE = 24000      # requested for playback (engines that cannot choose return their own rate)
-EXPORT_RATE = 48000    # requested for saved files
+AUDIO_RATE = 48000     # requested from engines (those that cannot choose return their own rate)
+CACHE_DIR = 'ses-onbellegi'   # rendered sentences per book: ses-onbellegi/<book id>/<key>.wav
 SENTENCE_GAP = 0.35    # seconds of silence between sentences in an exported file
 DEFAULT_ENGINE = {'tr': 'ema-lightning'}
 MAX_PATH = 259
@@ -304,16 +306,77 @@ class Engines:
             raise RuntimeError('Ses motoru hazır değil.')
         return self._worker
 
-    def say(self, text, speed=1.0, rate=PLAY_RATE):
+    # ------------------------------------------------------------- sentence cache
+    def _cache_path(self, book, text, speed, language):
+        """Where a sentence rendered with the voice chosen for `language` is kept (None: no caching)."""
+        if not book or not re.fullmatch(r'[0-9a-f]{8,40}', str(book)):
+            return None
+        engine_id, voice_id = self.choice(language)
+        if engine_id is None:
+            return None
+        options = (self._prefs().get('options') or {}).get(f'{engine_id}/{voice_id}') or {}
+        key = json.dumps([engine_id, voice_id, options, round(float(speed), 2), text], sort_keys=True, ensure_ascii=False)
+        return self.app_dir / CACHE_DIR / book / (hashlib.sha1(key.encode('utf-8')).hexdigest() + '.wav')
+
+    @staticmethod
+    def _clip(data):
+        with wave.open(io.BytesIO(data)) as clip:
+            duration = clip.getnframes() / clip.getframerate()
+        return {'audio': base64.b64encode(data).decode('ascii'), 'duration': duration}
+
+    def say(self, text, speed=1.0, book=None, language='tr'):
+        """One sentence as base64 WAV: from the book's cache when it was rendered before, else from the engine."""
         text = ' '.join(str(text).split())
         if not text:
             return {'audio': '', 'duration': 0.0}
-        result = self._ready_worker().request('say', text=text, speed=float(speed), rate=rate, timeout=300)
-        return {'audio': result.get('audio', ''), 'duration': result.get('duration', 0.0)}
-
-    def export(self, sentences, speed, path, progress=None):
-        """Writes all sentences into one WAV file; blocking (run it on a worker thread)."""
+        path = self._cache_path(book, text, speed, language)
+        if path is not None and path.exists():
+            return dict(self._clip(path.read_bytes()), cached=True)
         worker = self._ready_worker()
+        engine_id, voice_id = self.choice(language)
+        if (self.current.get('engine'), self.current.get('voice')) != (engine_id, voice_id):
+            raise RuntimeError('Ses motoru hazır değil.')
+        result = worker.request('say', text=text, speed=float(speed), rate=AUDIO_RATE, timeout=600)
+        if path is not None and result.get('audio'):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            partial = path.with_suffix('.part')
+            partial.write_bytes(base64.b64decode(result['audio']))
+            os.replace(partial, path)
+        return {'audio': result.get('audio', ''), 'duration': result.get('duration', 0.0), 'cached': False}
+
+    def cached(self, book, sentences, speed, language='tr'):
+        """How many of the sentences are already rendered for this book and voice."""
+        count = 0
+        for sentence in sentences:
+            text = ' '.join(str(sentence).split())
+            path = self._cache_path(book, text, speed, language) if text else None
+            count += bool(path is not None and path.exists())
+        return count
+
+    def prepare(self, book, sentences, speed, language='tr', progress=None, cancel=None):
+        """Renders sentences into the book's cache (blocking); already rendered ones are skipped."""
+        texts = [' '.join(str(s).split()) for s in sentences if str(s).strip()]
+        for index, text in enumerate(texts):
+            if cancel is not None and cancel.is_set():
+                return index
+            self.say(text, speed, book, language)
+            if progress:
+                progress(index + 1, len(texts))
+        return len(texts)
+
+    def cache_info(self):
+        root = self.app_dir / CACHE_DIR
+        files = list(root.rglob('*.wav')) if root.exists() else []
+        return {'files': len(files), 'bytes': sum(f.stat().st_size for f in files)}
+
+    def clear_cache(self, book=None):
+        root = self.app_dir / CACHE_DIR
+        target = root / book if book and re.fullmatch(r'[0-9a-f]{8,40}', str(book)) else root
+        shutil.rmtree(target, ignore_errors=True)
+        return self.cache_info()
+
+    def export(self, sentences, speed, path, progress=None, book=None, language='tr'):
+        """Writes all sentences into one WAV file, reusing (and filling) the book's cache; blocking."""
         texts = [' '.join(str(s).split()) for s in sentences if str(s).strip()]
         if not texts:
             raise ValueError('Kaydedilecek metin yok.')
@@ -321,7 +384,7 @@ class Engines:
         stream = None
         try:
             for index, text in enumerate(texts):
-                result = worker.request('say', text=text, speed=float(speed), rate=EXPORT_RATE, timeout=300)
+                result = self.say(text, speed, book, language)
                 with wave.open(io.BytesIO(base64.b64decode(result['audio']))) as clip:
                     if stream is None:
                         rate = clip.getframerate()

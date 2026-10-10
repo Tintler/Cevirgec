@@ -17,7 +17,7 @@
   let pageWrap = $state();
   let article = $state();
   let saveTimer = null;
-  let sentences = [];
+  let sentences = $state.raw([]);
   const SPEEDS = [0.8, 1, 1.25, 1.5, 1.75, 2];
 
   const PAPERS = {
@@ -51,7 +51,8 @@
     if (target) target.scrollIntoView({ block: 'start' });
     else pageWrap.scrollTop = offset * Math.max(0, pageWrap.scrollHeight - pageWrap.clientHeight);
     sentences = segment(article);
-    setSentences(sentences);
+    setSentences(sentences, { book: book.id, language: book.language || 'tr' });
+    refreshCached();
     savePosition(true);
   }
 
@@ -73,7 +74,9 @@
     onend: async () => {
       if (section < sectionCount - 1) {
         await load(section + 1, { continueReading: true });
-        if (player.active) play(0);
+        // The next chapter may not be prepared: make sure the engine is there before reading on.
+        if (player.active && (await ensureEngine())) play(0);
+        else if (player.active) stop();
       } else {
         stop();
         highlight(-1);
@@ -92,8 +95,27 @@
 
   const LANGUAGE_NAMES = { tr: 'Türkçe', en: 'İngilizce', de: 'Almanca', fr: 'Fransızca', es: 'İspanyolca', it: 'İtalyanca' };
 
-  // Starts (or reuses) the engine and voice chosen for this book's language and waits until it is ready.
-  async function ensureEngine() {
+  // ---- prepared (cached) audio
+  let cachedCount = $state(0);
+
+  async function refreshCached() {
+    const list = sentences;
+    const count = list.length ? await call('tts_cached', book.id, list, app.ttsPrefs.speed, book.language || 'tr') : 0;
+    if (list === sentences) cachedCount = typeof count === 'number' ? count : 0;
+  }
+
+  $effect(() => {
+    // A finished or advancing preparation of this book changes what is ready.
+    if (app.ttsPrepare?.book === book?.id || app.ttsPrepare === null) refreshCached();
+  });
+
+  // Plays from the cache when the whole chapter is prepared; otherwise starts (or reuses) the engine
+  // chosen for the book's language and waits until it is ready.
+  async function ensureEngine({ needEngine = false } = {}) {
+    if (!needEngine && sentences.length) {
+      await refreshCached();
+      if (cachedCount === sentences.length) return true;
+    }
     app.tts = await call('tts_load', book.language || 'tr');
     while (app.tts.state === 'loading') await new Promise((r) => setTimeout(r, 200));
     if (app.tts.state === 'missing') {
@@ -127,11 +149,38 @@
     saveTtsPrefs();
   }
 
+  let showPrepare = $state(false);
+
+  // Renders this chapter, or every chapter from here to the end, into the cache in the background.
+  async function prepare(toEnd) {
+    showPrepare = false;
+    if (app.ttsPrepare) return;
+    let list = sentences;
+    if (toEnd) {
+      list = [...sentences];
+      for (let number = section + 1; number < sectionCount; number++) {
+        const result = await call('reader_section', book.id, number);
+        if (!result || result.error) continue;
+        const holder = document.createElement('div');
+        holder.innerHTML = result.html;
+        list.push(...segment(holder));
+      }
+    }
+    if (!list.length) { toast('Hazırlanacak metin yok.'); return; }
+    if (!(await ensureEngine({ needEngine: true }))) return;
+    const result = await act('tts_prepare', book.id, list, app.ttsPrefs.speed, book.language || 'tr');
+    if (result?.started) app.ttsPrepare = { book: book.id, done: 0, total: result.total };
+  }
+
+  function cancelPrepare() {
+    call('tts_prepare_cancel');
+  }
+
   async function exportSection() {
     if (app.ttsExport) return;
     if (!sentences.length) { toast('Bu bölümde kaydedilecek metin yok.'); return; }
     if (!(await ensureEngine())) return;
-    const result = await act('tts_export', `${book.title} - ${sectionTitle}`, sentences, app.ttsPrefs.speed);
+    const result = await act('tts_export', `${book.title} - ${sectionTitle}`, sentences, app.ttsPrefs.speed, book.id, book.language || 'tr');
     if (result?.started) app.ttsExport = { done: 0, total: sentences.length };
   }
 
@@ -339,6 +388,24 @@
       </div>
       <div class="right">
         <button class="chip acc" title="Okuma hızı" onclick={cycleSpeed}>{app.ttsPrefs.speed.toLocaleString('tr-TR')}×</button>
+        {#if app.ttsPrepare?.book === book.id}
+          <button class="chip acc" title="Hazırlamayı durdur" onclick={cancelPrepare}>
+            Hazırlanıyor {app.ttsPrepare.done}/{app.ttsPrepare.total} <Icon name="x" size={12} /></button>
+        {:else}
+          <div class="prep">
+            <button class="chip" class:ready={sentences.length && cachedCount === sentences.length}
+              title="Sesi önceden üretip saklar; hazır bölümler motor yüklenmeden anında okunur"
+              disabled={Boolean(app.ttsPrepare)} onclick={() => (showPrepare = !showPrepare)}>
+              <Icon name={sentences.length && cachedCount === sentences.length ? 'check' : 'headphones'} size={14} />
+              {sentences.length && cachedCount === sentences.length ? 'Hazır' : cachedCount ? `Hazır ${cachedCount}/${sentences.length}` : 'Hazırla'}</button>
+            {#if showPrepare}
+              <div class="prep-menu">
+                <button onclick={() => prepare(false)}>Bu bölümü hazırla</button>
+                <button onclick={() => prepare(true)}>Buradan kitabın sonuna kadar hazırla</button>
+              </div>
+            {/if}
+          </div>
+        {/if}
         <button class="chip" title="Bu bölümü WAV ses dosyası olarak kaydet" disabled={Boolean(app.ttsExport)} onclick={exportSection}>
           <Icon name="download" size={14} />{app.ttsExport ? `Kaydediliyor ${app.ttsExport.done}/${app.ttsExport.total}` : 'Kaydet'}</button>
         <button class="icon-btn" title="Sonraki bölüm (Alt+→)" disabled={section >= sectionCount - 1} onclick={() => load(section + 1)}><Icon name="forward" /></button>
@@ -428,4 +495,10 @@
   .chip { height: 30px; padding: 0 12px; border-radius: 999px; background: var(--surface); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
   .chip:not(:disabled):hover { background: var(--surface-hover); }
   .chip.acc { color: var(--accent); min-width: 54px; justify-content: center; }
+  .chip.ready { color: var(--ok); }
+  .prep { position: relative; }
+  .prep-menu { position: absolute; bottom: 38px; right: 0; background: var(--panel); border: 1px solid var(--outline); border-radius: 10px;
+    padding: 4px; box-shadow: var(--shadow); z-index: 20; white-space: nowrap; }
+  .prep-menu button { display: block; width: 100%; text-align: left; padding: 8px 12px; border-radius: 7px; font-size: 13px; }
+  .prep-menu button:hover { background: var(--surface-hover); }
 </style>

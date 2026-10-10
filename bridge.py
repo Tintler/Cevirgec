@@ -692,11 +692,49 @@ class Bridge:
         device = self.ui_prefs().get('tts', {}).get('device', 'auto')
         return self._engines().load(language or 'tr', device)
 
-    def tts_say(self, text, speed=1.0):
+    def tts_say(self, text, speed=1.0, book=None, language='tr'):
         try:
-            return self._engines().say(text, speed)
+            return self._engines().say(text, speed, book, language or 'tr')
         except Exception as error:
             return _error(error)
+
+    def tts_cached(self, book, sentences, speed=1.0, language='tr'):
+        """How many of these sentences are already rendered (playable without loading the engine)."""
+        return self._engines().cached(book, sentences, speed, language or 'tr')
+
+    def tts_prepare(self, book, sentences, speed=1.0, language='tr'):
+        """Renders sentences into the book's cache on a background thread (one job at a time)."""
+        job = getattr(self, '_prepare_job', None)
+        if job and job.is_alive():
+            return {'error': 'Bir hazırlama zaten sürüyor.'}
+        cancel = threading.Event()
+        self._prepare_cancel = cancel
+        engines = self._engines()
+
+        def work():
+            try:
+                done = engines.prepare(book, sentences, speed, language or 'tr',
+                                       lambda d, t: self._emit('tts_prepare', {'book': book, 'done': d, 'total': t}),
+                                       cancel)
+                self._emit('tts_prepare', {'book': book, 'finished': True, 'cancelled': cancel.is_set(), 'done': done})
+            except Exception as error:
+                self._emit('tts_prepare', {'book': book, 'finished': True, 'error': str(error)})
+
+        self._prepare_job = threading.Thread(target=work, name='tts-prepare', daemon=True)
+        self._prepare_job.start()
+        return {'started': True, 'total': len([s for s in sentences if str(s).strip()])}
+
+    def tts_prepare_cancel(self):
+        cancel = getattr(self, '_prepare_cancel', None)
+        if cancel:
+            cancel.set()
+        return True
+
+    def tts_cache_info(self):
+        return self._engines().cache_info()
+
+    def tts_cache_clear(self, book=None):
+        return self._engines().clear_cache(book)
 
     def tts_choose_reference(self):
         """Audio file to clone a voice from (path only; it is read by the engine)."""
@@ -723,11 +761,13 @@ class Bridge:
     def tts_remove(self, engine_id):
         return self._reading(self._engines().remove, engine_id)
 
-    def tts_export(self, title, sentences, speed=1.0):
-        """Asks where to save, then writes the section as one WAV file on a background thread."""
+    def tts_export(self, title, sentences, speed=1.0, book=None, language='tr'):
+        """Asks where to save, then writes the section as one WAV file on a background thread
+        (prepared sentences come from the cache; the rest needs the engine)."""
         engines = self._engines()
-        if engines.state != 'ready':
-            return {'error': 'Ses motoru henüz hazır değil.'}
+        texts = [text for text in sentences if str(text).strip()]
+        if engines.state != 'ready' and engines.cached(book, texts, speed, language or 'tr') < len(texts):
+            return {'error': 'Ses motoru hazır değil ve bölümün sesi önceden hazırlanmamış.'}
         if engines.status()['exporting']:
             return {'error': 'Bir kayıt zaten sürüyor.'}
         name = re.sub(r'[\\/:*?"<>|]+', ' ', str(title or 'bolum')).strip()[:120] or 'bolum'
@@ -740,7 +780,8 @@ class Bridge:
         def work():
             try:
                 count = engines.export(sentences, speed, path,
-                                       lambda done, total: self._emit('tts_export', {'done': done, 'total': total}))
+                                       lambda done, total: self._emit('tts_export', {'done': done, 'total': total}),
+                                       book, language or 'tr')
                 self._emit('tts_export', {'finished': True, 'path': str(path), 'count': count})
             except Exception as error:
                 self._emit('tts_export', {'finished': True, 'error': str(error)})

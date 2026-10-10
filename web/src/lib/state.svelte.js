@@ -19,6 +19,7 @@ export const app = $state({
   // Read aloud: model status from tts.py, export progress and preferences.
   tts: { state: 'idle', message: '', device: null, exporting: false },
   ttsExport: null,
+  ttsPrepare: null,   // {book, done, total} while sentences are being prepared
   ttsPrefs: { device: 'auto', speed: 1, voices: {}, options: {} },
   engines: [],
 });
@@ -84,6 +85,13 @@ export async function init() {
     app.tts = status;
     // A voice may have been downloaded while loading: refresh the "downloaded" marks.
     if (status.state === 'ready') call('tts_engines').then((list) => { if (Array.isArray(list)) app.engines = list; });
+  });
+  on('tts_prepare', (data) => {
+    if (!data.finished) { app.ttsPrepare = { book: data.book, done: data.done, total: data.total }; return; }
+    app.ttsPrepare = null;
+    if (data.error) toast('Hazırlama durdu: ' + data.error, 'error');
+    else if (data.cancelled) toast(`Hazırlama durduruldu (${data.done} cümle hazır).`);
+    else toast(`Ses hazırlandı (${data.done} cümle).`, 'ok');
   });
   on('tts_export', (data) => {
     if (!data.finished) { app.ttsExport = data; return; }

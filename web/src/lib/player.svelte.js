@@ -14,6 +14,7 @@ export const player = $state({
 });
 
 let sentences = [];
+let scope = { book: null, language: 'tr' };   // where rendered sentences are cached
 let context = null;
 let source = null;
 let generation = 0;
@@ -24,8 +25,9 @@ export function setHooks(next) {
   Object.assign(hooks, next);
 }
 
-export function setSentences(list) {
+export function setSentences(list, where = {}) {
   sentences = list;
+  scope = { book: where.book ?? null, language: where.language || 'tr' };
   player.total = list.length;
   cache.clear();
 }
@@ -40,7 +42,7 @@ function base64Buffer(text) {
 function fetchSentence(index) {
   const key = `${index}@${player.speed}`;
   if (!cache.has(key)) {
-    const promise = call('tts_say', sentences[index], player.speed).then(async (result) => {
+    const promise = call('tts_say', sentences[index], player.speed, scope.book, scope.language).then(async (result) => {
       if (!result || result.error) throw new Error(result?.error ?? 'Ses üretilemedi.');
       if (!result.audio) return null;
       return context.decodeAudioData(base64Buffer(result.audio));
