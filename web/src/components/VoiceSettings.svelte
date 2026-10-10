@@ -4,11 +4,11 @@
   import { call } from '../lib/api.js';
   import { confirm } from '../lib/confirm.svelte.js';
 
-  const LANGUAGES = { tr: 'Türkçe kitaplar', en: 'İngilizce kitaplar' };
+  const LANGUAGES = { tr: 'Ses' };
   const DEFAULT_ENGINE = { tr: 'ema-lightning' };
 
   const usable = $derived(app.engines.filter((e) => e.mode));
-  const languages = $derived([...new Set(['tr', 'en', ...usable.flatMap((e) => e.languages)])]);
+  const languages = ['tr'];
 
   function options(language) {
     return usable.flatMap((engine) => engine.voices.filter((v) => v.language === language).map((voice) => ({

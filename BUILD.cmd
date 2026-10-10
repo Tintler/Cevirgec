@@ -20,9 +20,6 @@ py -3 -m PyInstaller --noconfirm --clean --onefile --windowed ^
   --add-data "assets;assets" ^
   --add-data "web\dist;web\dist" ^
   --add-data "engines\ema\motor.json;engines\ema" ^
-  --add-data "engines\piper\motor.json;engines\piper" ^
-  --exclude-module piper ^
-  --exclude-module onnxruntime ^
   --exclude-module PySide6 ^
   --exclude-module ema_lightning ^
   --exclude-module torch ^

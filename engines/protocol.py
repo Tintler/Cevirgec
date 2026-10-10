@@ -9,7 +9,7 @@ Every voice engine runs as its own process and talks to Çevirgeç through JSON 
 Commands: load {voice, device}, say {text, speed, rate}, ping, shutdown. What an engine offers (name,
 languages, voices) is described statically in its motor.json, so Çevirgeç can list it without starting it.
 `say` returns a mono 16-bit WAV as base64 with its duration. An engine only implements
-load() and say(); see engines/ema/worker.py and engines/piper/worker.py.
+load() and say(); see engines/ema/worker.py.
 """
 from __future__ import annotations
 

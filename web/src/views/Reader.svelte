@@ -101,7 +101,7 @@
       const go = await confirm({
         title: 'Ses motoru yok',
         message: `Bu kitabın dili ${LANGUAGE_NAMES[key] ?? `"${key}"`}; kurulu ses motorlarında bu dil için ses yok. ` +
-          'Ayarlar → Sesli okuma bölümünden bu dili destekleyen bir motor kurabilirsiniz (Piper birçok dili destekler).',
+          'Ayarlar → Sesli okuma bölümünden bu dili destekleyen bir motor kurabilirsiniz.',
         ok: 'Ayarlara git', cancel: 'Kapat',
       });
       if (go) app.view = 'settings';

@@ -150,7 +150,6 @@ Okuyucu, açık kitabı yerel bir **ses motoruyla** sesli okuyabilir; metin bilg
 | Motor | Diller | Not |
 |---|---|---|
 | [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) | Türkçe | Çok doğal Türkçe; NVIDIA ekran kartında çok hızlı. Model (~34 MB) ilk kullanımda Hugging Face'ten iner. Apache-2.0. |
-| [Piper](https://github.com/OHF-Voice/piper1-gpl) | Türkçe, İngilizce (ve daha fazlası eklenebilir) | Hafif, CPU'da hızlı. Her ses (~63 MB) ilk kullanımda Hugging Face'ten iner. |
 
 Motor paketleri yayımlanmaz ve uygulama hiçbir paketi kendisi indirmez: paketleri kendi bilgisayarınızda oluşturup Ayarlar'dan kurarsınız. Model ve ses dosyaları ilk kullanımda kendi resmi kaynaklarından indirilir.
 
@@ -163,7 +162,7 @@ Motor paketleri yayımlanmaz ve uygulama hiçbir paketi kendisi indirmez: paketl
    py -3 -m pip install -r requirements-tts.txt
    ```
 
-2. Proje klasöründe `BUILD_TTS.cmd` çalıştırın (tek motor için `BUILD_TTS.cmd ema` ya da `BUILD_TTS.cmd piper`). Paketler `dist-engines\cevirgec-ses-<motor>-win64.zip` olarak oluşur. EMA paketi, ortamdaki PyTorch ile paketlenir: CUDA'lı PyTorch ile birkaç GB olur ve ekran kartını kullanır; CUDA'sız PyTorch ile derlenirse yalnızca CPU ile çalışır (betik bu durumda uyarır).
+2. Proje klasöründe `BUILD_TTS.cmd` çalıştırın (tek motor için `BUILD_TTS.cmd ema`). Paketler `dist-engines\cevirgec-ses-<motor>-win64.zip` olarak oluşur. EMA paketi, ortamdaki PyTorch ile paketlenir: CUDA'lı PyTorch ile birkaç GB olur ve ekran kartını kullanır; CUDA'sız PyTorch ile derlenirse yalnızca CPU ile çalışır (betik bu durumda uyarır).
 3. Çevirgeç'te **Ayarlar → Sesli okuma → Dosyadan kur** ile zip'i seçin. Paket programın klasöründe `ses-motorlari\<motor>\` altına açılır. Aynı motoru yeniden kurmak (güncellemek) indirilmiş modelleri ve sesleri korur; **Kaldır** motoru ve dosyalarını siler.
 
 Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurulamaz; klasör yolu çok uzunsa (Windows 260 karakter sınırı) kurulum anlaşılır bir mesajla reddedilir. Bu durumlarda Çevirgeç'i kısa ve yazılabilir bir klasöre (ör. `C:\Cevirgec`) taşıyın.
@@ -172,7 +171,7 @@ Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurula
 
 ### Ses seçimi
 
-**Ayarlar → Sesli okuma**'da her dil için hangi motor ve sesin okuyacağı seçilir (ör. Türkçe kitaplar → EMA Lightning, İngilizce kitaplar → Piper · Lessac). Seçim yapılmazsa Türkçe için EMA, diğer diller için o dili destekleyen ilk motor kullanılır. Kitabın dili EPUB'daki `dc:language` bilgisinden alınır; bilgi yoksa Türkçe varsayılır. Kurulu motorlarda o dil yoksa okuyucu bunu söyler ve Ayarlar'a yönlendirir.
+**Ayarlar → Sesli okuma → Ses** ile kitapları hangi motorun okuyacağı seçilir. Kurulu motorlar yalnızca Türkçe okur. Seçim yapılmazsa Türkçe için EMA, diğer diller için o dili destekleyen ilk motor kullanılır. Kitabın dili EPUB'daki `dc:language` bilgisinden alınır; bilgi yoksa Türkçe varsayılır. Kurulu motorlarda o dil yoksa okuyucu bunu söyler ve Ayarlar'a yönlendirir.
 
 ### Kullanım
 
@@ -181,7 +180,7 @@ Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurula
 - ⏮ / ⏭ önceki ve sonraki cümleye geçer, ■ okumayı bitirir; okuma sırasında `Boşluk` tuşu duraklatır/sürdürür.
 - Hız düğmesi 0,8× ile 2× arasında döner; yeni hız bir sonraki cümleden itibaren uygulanır.
 - Bölüm bitince bir sonraki bölüme geçilir ve okuma sürer.
-- **Kaydet**, açık bölümü WAV dosyası olarak kaydeder (EMA 48 kHz, Piper sesin kendi örnekleme hızında); ilerleme düğmede görünür.
+- **Kaydet**, açık bölümü WAV dosyası olarak kaydeder (48 kHz); ilerleme düğmede görünür.
 - Bir motor çökerse okuma durur ve hata ayrıntısı gösterilir; motorun günlüğü `ses-motorlari\<motor>\worker.log` dosyasındadır. Okumayı yeniden başlatmak motoru da yeniden başlatır.
 
 ### Yeni ses motoru eklemek (geliştiriciler için)
@@ -397,7 +396,7 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `web/` | Svelte arayüz kaynak kodu (`npm run build` ile `web/dist` oluşur) |
 | `epub_meta.py` | EPUB başlık, yazar ve kapak bilgisi |
 | `tts.py` | Ses motorları: bulma, dil başına seçim, motor süreçleri, zip'ten kurulum, WAV kaydı |
-| `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA ve Piper işçileri, `motor.json` tanımları |
+| `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA işçisi, `motor.json` tanımları |
 | `build_engines.py`, `BUILD_TTS.cmd` | Ses motoru paketlerini derleme |
 | `reader.py` | Okuma sekmesi: kitaplık (`library.json`) ve EPUB bölümlerini güvenli HTML'e dönüştürme |
 | `gui.py` | Eski PySide6 arayüzü (geçiş sürecinde korunuyor) |

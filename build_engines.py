@@ -1,7 +1,7 @@
 """Builds the voice engine packages (worker.exe + runtime + motor.json) as release zips.
 
     py -3 build_engines.py            all engines
-    py -3 build_engines.py piper      one engine (folder name under engines/)
+    py -3 build_engines.py ema        one engine (folder name under engines/)
 
 Output: dist-engines/cevirgec-ses-<id>-win64.zip with one folder <id>/ inside, to be installed in
 Çevirgeç with Ayarlar → Sesli okuma → "Dosyadan kur". Packages are built locally and not published:
@@ -23,9 +23,6 @@ DIST = ROOT / 'dist-engines'
 # Extra PyInstaller options per engine folder: data files and native libraries the analysis misses.
 OPTIONS = {
     'ema': ['--collect-all', 'ema_lightning', '--collect-all', 'normalizer_tr', '--collect-data', 'huggingface_hub'],
-    # piper.train (model training) pulls in PyTorch; reading only needs onnxruntime.
-    'piper': ['--collect-all', 'piper', '--collect-binaries', 'onnxruntime', '--exclude-module', 'piper.train',
-              '--exclude-module', 'torch', '--exclude-module', 'lightning', '--exclude-module', 'PIL'],
 }
 EXCLUDE = ['PySide6', 'webview', 'tkinter', 'matplotlib', 'IPython', 'pytest']
 
