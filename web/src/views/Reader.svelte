@@ -335,7 +335,7 @@
         <button class="icon-btn" title="Önceki bölüm (Alt+←)" disabled={section <= 0} onclick={() => load(section - 1)}><Icon name="back" /></button>
         <div class="where">
           <b>Bölüm {section + 1} / {sectionCount} · %{Math.round(app.reading.percent)}</b>
-          <small>{#if app.tts.state === 'loading'}Ses modeli yükleniyor…{:else if player.active}Cümle {player.index + 1} / {player.total}{#if player.waiting} · hazırlanıyor…{/if}{:else}{sectionTitle}{/if}</small>
+          <small>{#if app.tts.state === 'loading'}{app.tts.message || 'Ses modeli yükleniyor…'}{:else if player.active}Cümle {player.index + 1} / {player.total}{#if player.waiting} · hazırlanıyor…{/if}{:else}{sectionTitle}{/if}</small>
         </div>
       </div>
       <div class="controls">

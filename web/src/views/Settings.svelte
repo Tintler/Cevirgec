@@ -84,6 +84,8 @@
         {#if app.tts.state === 'missing'}
           <div class="warn"><Icon name="alert" size={16} /><span>Kurulu değil. Komut isteminde <code>py -3 -m pip install ema-lightning</code>
             çalıştırıp uygulamayı yeniden başlatın. NVIDIA ekran kartı için önce PyTorch'un CUDA sürümünü kurun.</span></div>
+        {:else if app.tts.state === 'loading'}
+          <div class="info"><span>{app.tts.message}</span><small>İlk açılışta model indirilir; ilerleme komut penceresinde de görünür.</small></div>
         {:else if app.tts.state === 'error'}
           <div class="warn"><Icon name="alert" size={16} /><span class="selectable">{app.tts.message}</span></div>
         {/if}
@@ -184,6 +186,8 @@
   .l small { display: block; color: var(--dim); font-size: 12px; }
   .field.w { width: 320px; }
   .field.n { width: 140px; }
+  .info { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 8px 12px; border-radius: 8px; margin: 4px 0 8px; }
+  .info small { color: var(--dim); }
   .warn code { font-family: var(--mono); background: var(--surface); padding: 1px 5px; border-radius: 4px; user-select: text; }
   .warn { display: flex; gap: 8px; align-items: center; color: var(--warn); font-size: 12px; background: color-mix(in srgb, var(--warn) 10%, transparent); padding: 8px 12px; border-radius: 8px; margin: 4px 0 8px; }
   .seg { display: flex; background: var(--surface); border-radius: 999px; padding: 3px; }

@@ -10,7 +10,9 @@ from __future__ import annotations
 import base64
 import importlib.util
 import io
+import os
 import threading
+import time
 import traceback
 import wave
 
@@ -18,6 +20,7 @@ PLAY_RATE = 24000      # sent to the interface; half of the model's rate keeps t
 EXPORT_RATE = 48000    # files keep the model's full quality
 SENTENCE_GAP = 0.35    # seconds of silence between sentences in an exported file
 WARMUP = 'Merhaba, bu bir deneme cümlesidir.'
+BATCH_SIZE = 4          # sentences synthesised together at most (current + prefetch)
 
 
 def _pcm16(audio):
@@ -80,22 +83,34 @@ class Speaker:
 
     _requested = None
 
+    def _stage(self, message, started):
+        print(f'[sesli okuma] {time.perf_counter() - started:6.1f} sn  {message}', flush=True)
+        self._set('loading', message)
+
     def _load(self, device):
+        started = time.perf_counter()
         try:
             if self._factory is not None:
                 model = self._factory(device)
             else:
+                os.environ.setdefault('HF_HUB_DISABLE_SYMLINKS_WARNING', '1')
+                self._stage('PyTorch yükleniyor…', started)
                 import torch
                 from ema_lightning import EMA
                 if device == 'cuda' and not torch.cuda.is_available():
                     raise RuntimeError('NVIDIA ekran kartı (CUDA) bulunamadı. Ayarlardan "Otomatik" veya "CPU" seçin '
                                        'ya da PyTorch\'un CUDA sürümünü kurun.')
+                self._stage('Model dosyaları alınıyor ve yükleniyor…', started)
                 model = EMA(device=device)
-                if model.device.type == 'cuda':
-                    model.lightning()
-            model.say(WARMUP, sample_rate=PLAY_RATE, seed=0)  # first call measures batch size and warms up
+                # lightning() (torch.compile + CUDA graphs for every shape) is skipped on purpose: it can take
+                # minutes or stall on Windows, and the plain GPU/CPU path is already far faster than real time.
+                # A fixed small batch also skips the throughput benchmark; reading needs at most a few at once.
+                model._batch_size = BATCH_SIZE
+            self._stage('Isınıyor…', started)
+            model.say(WARMUP, sample_rate=PLAY_RATE, seed=0)
             self._model = model
             self._device = str(getattr(model, 'device', device))
+            print(f'[sesli okuma] {time.perf_counter() - started:6.1f} sn  Hazır ({self._device})', flush=True)
             self._set('ready', 'Hazır')
         except Exception as error:
             traceback.print_exc()
