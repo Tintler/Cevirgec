@@ -19,7 +19,8 @@ export const app = $state({
   // Read aloud: model status from tts.py, export progress and preferences.
   tts: { state: 'idle', message: '', device: null, exporting: false },
   ttsExport: null,
-  ttsPrefs: { device: 'auto', speed: 1 },
+  ttsPrefs: { device: 'auto', speed: 1, voices: {} },
+  engines: [],
 });
 
 export const READER_DEFAULTS = { size: 19, font: 'serif', leading: 1.75, width: 680, paper: 'theme' };
@@ -87,7 +88,12 @@ export async function init() {
     else toast(`Ses kaydedildi (${data.count} cümle): ${data.path}`, 'ok');
   });
   const prefs = await call('ui_prefs');
-  app.ttsPrefs = { device: 'auto', speed: 1, ...(prefs?.tts ?? {}) };
+  app.ttsPrefs = { device: 'auto', speed: 1, voices: {}, ...(prefs?.tts ?? {}) };
+  on('tts_engines', ({ engines, done, error }) => {
+    app.engines = engines;
+    if (done) toast(done, 'ok');
+    if (error) toast(error, 'error');
+  });
   app.tts = await call('tts_status');
   setTheme(prefs?.theme ?? 'dark', false);
   app.reader = { ...READER_DEFAULTS, ...(prefs?.reader ?? {}) };

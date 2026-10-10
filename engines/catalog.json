@@ -1,0 +1,7 @@
+{
+  "base_url": "https://github.com/Tintler/Cevirgec/releases/download/ses-motorlari-v1/",
+  "engines": {
+    "ema-lightning": {"file": "cevirgec-ses-ema-lightning-win64.zip", "version": "1.1.0", "size_mb": 250},
+    "piper": {"file": "cevirgec-ses-piper-win64.zip", "version": "1.8.0", "size_mb": 60}
+  }
+}

@@ -1,168 +1,454 @@
-"""Read-aloud back end built on EMA Lightning (Turkish TTS, Apache-2.0).
+"""Voice engines for read-aloud: discovery, installation and the worker processes.
 
-The model is optional: ema-lightning pulls in PyTorch, so it is imported only when
-first needed and the rest of the application works without it. Loading takes a
-while (weights from the Hugging Face cache, first download ~34 MB), so it runs on a
-background thread and reports its state through the `emit` callback.
+An engine (EMA Lightning, Piper, …) is a separate program speaking the JSON-lines protocol in
+engines/protocol.py. Installed engines live next to Çevirgeç in `ses-motorlari/<id>/` (worker.exe,
+its runtime, motor.json and a data/ folder for downloaded models and voices). When Çevirgeç runs
+from source, an engine whose Python packages are installed is started from engines/<name>/ instead,
+so development needs no packaging. Which engine and voice read a book is chosen per language.
 """
 from __future__ import annotations
 
 import base64
 import importlib.util
 import io
+import itertools
+import json
 import os
+from pathlib import Path, PurePosixPath
+import shutil
+import subprocess
+import sys
 import threading
 import time
-import traceback
+import urllib.error
+import urllib.request
 import wave
+import zipfile
 
-PLAY_RATE = 24000      # sent to the interface; half of the model's rate keeps the bridge payload small
-EXPORT_RATE = 48000    # files keep the model's full quality
+ENGINES_DIR = 'ses-motorlari'
+PROTOCOL = 1
+PLAY_RATE = 24000      # requested for playback (engines that cannot choose return their own rate)
+EXPORT_RATE = 48000    # requested for saved files
 SENTENCE_GAP = 0.35    # seconds of silence between sentences in an exported file
-WARMUP = 'Merhaba, bu bir deneme cümlesidir.'
-BATCH_SIZE = 4          # sentences synthesised together at most (current + prefetch)
+DEFAULT_ENGINE = {'tr': 'ema-lightning'}
+FROZEN = bool(getattr(sys, 'frozen', False))
 
 
-def _pcm16(audio):
-    import numpy as np
-    return (np.clip(audio, -1.0, 1.0) * 32767.0).round().astype('<i2').tobytes()
+def language_key(language):
+    return str(language or 'tr').split('-')[0].split('_')[0].lower() or 'tr'
 
 
-def wav_bytes(audio, rate):
-    buffer = io.BytesIO()
-    with wave.open(buffer, 'wb') as stream:
-        stream.setnchannels(1)
-        stream.setsampwidth(2)
-        stream.setframerate(rate)
-        stream.writeframes(_pcm16(audio))
-    return buffer.getvalue()
+class Worker:
+    """One engine process: request/response over stdin/stdout, events forwarded to `on_event`."""
 
-
-class Speaker:
-    """Owns one EMA instance. States: missing, idle, loading, ready, error."""
-
-    def __init__(self, emit=None, factory=None):
-        self._emit = emit or (lambda _event, _data: None)
-        self._factory = factory          # tests inject a fake model factory
+    def __init__(self, engine, data, log_path, on_event):
+        self.engine, self.data, self.log_path, self.on_event = engine, Path(data), Path(log_path), on_event
+        self._ids = itertools.count(1)
+        self._pending = {}
         self._lock = threading.Lock()
-        self._model = None
-        self._device = None
-        self._thread = None
-        self.state = 'idle' if self.installed() else 'missing'
-        self.message = ''
+        self._write = threading.Lock()
+        self._ready = threading.Event()
+        self.process = None
+
+    def start(self, timeout=60):
+        self.data.mkdir(parents=True, exist_ok=True)
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        log = open(self.log_path, 'w', encoding='utf-8', errors='replace')
+        if self.engine['mode'] == 'package':
+            command, cwd = [str(Path(self.engine['dir']) / self.engine.get('entry', 'worker.exe'))], self.engine['dir']
+        else:
+            command, cwd = [sys.executable, '-u', '-m', self.engine['module']], self.engine['root']
+        env = dict(os.environ, CEVIRGEC_ENGINE_DATA=str(self.data), PYTHONIOENCODING='utf-8')
+        flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        try:
+            self.process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                            stderr=log, creationflags=flags)
+        finally:
+            log.close()
+        threading.Thread(target=self._read, name=f'engine-{self.engine["id"]}', daemon=True).start()
+        if not self._ready.wait(timeout):
+            self.stop()
+            raise RuntimeError('Ses motoru başlatılamadı. ' + self.log_tail())
+
+    def _read(self):
+        for raw in self.process.stdout:
+            try:
+                message = json.loads(raw.decode('utf-8'))
+            except ValueError:
+                continue
+            if message.get('event') == 'ready':
+                if message.get('protocol') == PROTOCOL:
+                    self._ready.set()
+            elif 'event' in message:
+                self.on_event(message)
+            elif 'id' in message:
+                with self._lock:
+                    slot = self._pending.pop(message['id'], None)
+                if slot:
+                    slot['message'] = message
+                    slot['done'].set()
+        # The process ended: fail everything still waiting.
+        with self._lock:
+            pending, self._pending = self._pending, {}
+        for slot in pending.values():
+            slot['message'] = {'ok': False, 'error': 'Ses motoru beklenmedik biçimde kapandı. ' + self.log_tail()}
+            slot['done'].set()
+
+    def request(self, command, timeout=None, **payload):
+        if not self.alive:
+            raise RuntimeError('Ses motoru çalışmıyor. ' + self.log_tail())
+        number = next(self._ids)
+        slot = {'done': threading.Event(), 'message': None}
+        with self._lock:
+            self._pending[number] = slot
+        line = json.dumps({'id': number, 'cmd': command, **payload}, ensure_ascii=False) + '\n'
+        try:
+            with self._write:
+                self.process.stdin.write(line.encode('utf-8'))
+                self.process.stdin.flush()
+        except OSError as error:
+            raise RuntimeError('Ses motoruna ulaşılamadı. ' + self.log_tail()) from error
+        if not slot['done'].wait(timeout):
+            with self._lock:
+                self._pending.pop(number, None)
+            raise RuntimeError('Ses motoru yanıt vermedi.')
+        message = slot['message']
+        if not message.get('ok'):
+            raise RuntimeError(message.get('error') or 'Ses motoru hatası.')
+        return message.get('result') or {}
+
+    @property
+    def alive(self):
+        return self.process is not None and self.process.poll() is None
+
+    def log_tail(self, lines=6):
+        try:
+            text = self.log_path.read_text(encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            return ''
+        tail = [line.strip() for line in text if line.strip()][-lines:]
+        return ('Ayrıntı: ' + ' | '.join(tail))[:900] if tail else ''
+
+    def stop(self):
+        if not self.process:
+            return
+        if self.alive:
+            try:
+                with self._write:
+                    self.process.stdin.write(b'{"id": 0, "cmd": "shutdown"}\n')
+                    self.process.stdin.flush()
+                self.process.wait(3)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        if self.alive:
+            self.process.kill()
+
+
+class Engines:
+    """Lists, installs and runs voice engines; keeps at most one worker process running."""
+
+    def __init__(self, app_dir, source_dir, emit=None, prefs=None):
+        self.app_dir, self.source_dir = Path(app_dir), Path(source_dir)
+        self._emit = emit or (lambda _event, _data: None)
+        self._prefs = prefs or (lambda: {})
+        self._lock = threading.RLock()
+        self._worker = None
+        self._loading = None
+        self.state, self.message = 'idle', ''
+        self.current = {'engine': None, 'voice': None, 'device': None, 'language': None}
         self._exporting = False
+        self._busy = {}               # engine id -> install/download progress text
 
-    def installed(self):
-        if self._factory is not None:
-            return True
-        return importlib.util.find_spec('ema_lightning') is not None and importlib.util.find_spec('torch') is not None
+    # ------------------------------------------------------------- discovery
+    @property
+    def install_root(self):
+        return self.app_dir / ENGINES_DIR
 
+    def _catalog(self):
+        try:
+            return json.loads((self.source_dir / 'catalog.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {'base_url': '', 'engines': {}}
+
+    def _manifests(self):
+        """Known engines: bundled descriptions (engines/*/motor.json) merged with installed packages."""
+        known = {}
+        for path in sorted(self.source_dir.glob('*/motor.json')):
+            try:
+                manifest = json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                continue
+            manifest['root'] = str(self.source_dir.parent)
+            known[manifest['id']] = manifest
+        if self.install_root.exists():
+            for path in sorted(self.install_root.glob('*/motor.json')):
+                try:
+                    manifest = json.loads(path.read_text(encoding='utf-8'))
+                except (OSError, ValueError):
+                    continue
+                if manifest.get('protocol') == PROTOCOL and (path.parent / manifest.get('entry', 'worker.exe')).exists():
+                    merged = dict(known.get(manifest['id'], {}), **manifest)
+                    merged['dir'] = str(path.parent)
+                    merged['installed_version'] = manifest.get('version')
+                    known[manifest['id']] = merged
+        return known
+
+    def _mode(self, manifest):
+        if (not FROZEN and manifest.get('module') and manifest.get('root')
+                and all(importlib.util.find_spec(name) for name in manifest.get('python_modules', []))):
+            return 'source'
+        return 'package' if manifest.get('dir') else None
+
+    def _data_dir(self, engine_id):
+        return self.install_root / engine_id / 'data'
+
+    def engines(self):
+        catalog = self._catalog()
+        result = []
+        for engine_id, manifest in self._manifests().items():
+            data = self._data_dir(engine_id)
+            download = catalog.get('engines', {}).get(engine_id)
+            voices = [dict(voice, downloaded=all((data / name).exists() for name in voice.get('files', [])))
+                      for voice in manifest.get('voices', [])]
+            result.append({
+                'id': engine_id, 'name': manifest.get('name', engine_id), 'version': manifest.get('version', ''),
+                'installed_version': manifest.get('installed_version'), 'description': manifest.get('description', ''),
+                'license': manifest.get('license', ''), 'homepage': manifest.get('homepage', ''),
+                'mode': self._mode(manifest), 'removable': bool(manifest.get('dir')), 'speed': bool(manifest.get('speed')),
+                'devices': manifest.get('devices', ['cpu']), 'voices': voices,
+                'languages': sorted({voice['language'] for voice in voices}),
+                'download': ({'url': catalog['base_url'] + download['file'], 'size_mb': download.get('size_mb'),
+                              'version': download.get('version')} if download and catalog.get('base_url') else None),
+                'busy': self._busy.get(engine_id),
+            })
+        return result
+
+    def choice(self, language):
+        """(engine, voice) for a book language: the user's choice when usable, otherwise a default."""
+        key = language_key(language)
+        usable = {item['id']: item for item in self.engines() if item['mode']}
+        engine_id, _, voice_id = ((self._prefs().get('voices') or {}).get(key) or '').partition('/')
+        if engine_id in usable and any(v['id'] == voice_id and v['language'] == key for v in usable[engine_id]['voices']):
+            return engine_id, voice_id
+        for candidate in [DEFAULT_ENGINE.get(key)] + sorted(usable):
+            voice = next((v for v in usable.get(candidate, {}).get('voices', []) if v['language'] == key), None)
+            if voice:
+                return candidate, voice['id']
+        return None, None
+
+    # ------------------------------------------------------------- status
     def status(self):
-        return {'state': self.state, 'message': self.message, 'device': self._device, 'exporting': self._exporting}
+        return {'state': self.state, 'message': self.message, 'exporting': self._exporting, **self.current}
 
     def _set(self, state, message=''):
         self.state, self.message = state, message
         self._emit('tts', self.status())
 
-    def load(self, device='auto'):
-        """Starts loading in the background; returns the current status immediately."""
+    def _on_event(self, message):
+        if message.get('event') == 'stage' and self.state == 'loading':
+            self._set('loading', message.get('message', ''))
+
+    # ------------------------------------------------------------- loading and speech
+    def load(self, language, device='auto'):
+        """Starts (or reuses) the worker for a book language in the background; returns the status."""
+        engine_id, voice_id = self.choice(language)
         with self._lock:
-            if self.state == 'missing':
+            key = language_key(language)
+            if engine_id is None:
+                self.current = {'engine': None, 'voice': None, 'device': None, 'language': key}
+                self._set('missing', 'Bu dil için kullanılabilir bir ses motoru yok. Ayarlar → Sesli okuma bölümünden kurun.')
                 return self.status()
-            wanted = device or 'auto'
-            if self._model is not None and wanted in ('auto', self._requested):
+            target = {'engine': engine_id, 'voice': voice_id, 'device': device or 'auto', 'language': key}
+            if self._loading and self._loading.is_alive():
                 return self.status()
-            if self._thread and self._thread.is_alive():
+            same = (self._worker and self._worker.alive and self.state == 'ready'
+                    and (self.current['engine'], self.current['voice']) == (engine_id, voice_id)
+                    and self._requested_device == target['device'])
+            if same:
+                self.current['language'] = key
                 return self.status()
-            self._requested = wanted
-            self._model = None
-            self._set('loading', 'Ses modeli yükleniyor…')
-            self._thread = threading.Thread(target=self._load, args=(wanted,), name='tts-load', daemon=True)
-            self._thread.start()
+            self.current = target
+            self._requested_device = target['device']
+            self._set('loading', 'Ses motoru başlatılıyor…')
+            self._loading = threading.Thread(target=self._load, args=(target,), name='tts-load', daemon=True)
+            self._loading.start()
         return self.status()
 
-    _requested = None
+    _requested_device = None
 
-    @staticmethod
-    def _console(message, started):
-        # ASCII only, and never fatal: the console may be cp1252 or missing (windowed exe).
+    def _load(self, target):
         try:
-            print(f'[sesli okuma] {time.perf_counter() - started:6.1f} s  {message}', flush=True)
-        except Exception:
-            pass
-
-    def _stage(self, message, console, started):
-        self._console(console, started)
-        self._set('loading', message)
-
-    def _load(self, device):
-        started = time.perf_counter()
-        try:
-            if self._factory is not None:
-                model = self._factory(device)
-            else:
-                os.environ.setdefault('HF_HUB_DISABLE_SYMLINKS_WARNING', '1')
-                self._stage('PyTorch yükleniyor…', 'PyTorch yukleniyor', started)
-                import torch
-                from ema_lightning import EMA
-                if device == 'cuda' and not torch.cuda.is_available():
-                    raise RuntimeError('NVIDIA ekran kartı (CUDA) bulunamadı. Ayarlardan "Otomatik" veya "CPU" seçin '
-                                       'ya da PyTorch\'un CUDA sürümünü kurun.')
-                self._stage('Model dosyaları alınıyor ve yükleniyor…', 'model dosyalari aliniyor ve yukleniyor', started)
-                model = EMA(device=device)
-                # lightning() (torch.compile + CUDA graphs for every shape) is skipped on purpose: it can take
-                # minutes or stall on Windows, and the plain GPU/CPU path is already far faster than real time.
-                # A fixed small batch also skips the throughput benchmark; reading needs at most a few at once.
-                model._batch_size = BATCH_SIZE
-            self._stage('Isınıyor…', 'isiniyor', started)
-            model.say(WARMUP, sample_rate=PLAY_RATE, seed=0)
-            self._model = model
-            self._device = str(getattr(model, 'device', device))
-            self._console(f'hazir ({self._device})', started)
+            manifest = self._manifests()[target['engine']]
+            mode = self._mode(manifest)
+            if not mode:
+                raise RuntimeError('Ses motoru kurulu değil.')
+            worker = self._worker
+            if not (worker and worker.alive and worker.engine['id'] == target['engine']
+                    and self._requested_device == target['device']):
+                self.stop_worker()
+                worker = Worker(dict(manifest, mode=mode), self._data_dir(target['engine']),
+                                self.install_root / target['engine'] / 'worker.log', self._on_event)
+                worker.start()
+                self._worker = worker
+            result = worker.request('load', voice=target['voice'], device=target['device'])
+            self.current = dict(target, device=result.get('device', target['device']))
             self._set('ready', 'Hazır')
         except Exception as error:
-            self._console(f'HATA: {type(error).__name__}: {error!r}'.encode('ascii', 'replace').decode(), started)
-            try:
-                traceback.print_exc()
-            except Exception:
-                pass
-            self._set('error', f'Ses modeli yüklenemedi: {error}')
+            self._set('error', f'Ses motoru yüklenemedi: {error}')
 
-    def _ready_model(self):
-        if self._model is None:
-            raise RuntimeError('Ses modeli henüz hazır değil.')
-        return self._model
+    def _ready_worker(self):
+        if self.state != 'ready' or not self._worker or not self._worker.alive:
+            raise RuntimeError('Ses motoru hazır değil.')
+        return self._worker
 
-    def say(self, text, speed=1.0):
-        """One sentence as a base64 WAV (PLAY_RATE) with its duration."""
-        model = self._ready_model()
+    def say(self, text, speed=1.0, rate=PLAY_RATE):
         text = ' '.join(str(text).split())
         if not text:
             return {'audio': '', 'duration': 0.0}
-        speech = model.say(text, speed=float(speed), seed=0, sample_rate=PLAY_RATE)
-        return {'audio': base64.b64encode(wav_bytes(speech.audio, PLAY_RATE)).decode('ascii'),
-                'duration': speech.duration}
+        result = self._ready_worker().request('say', text=text, speed=float(speed), rate=rate, timeout=300)
+        return {'audio': result.get('audio', ''), 'duration': result.get('duration', 0.0)}
 
     def export(self, sentences, speed, path, progress=None):
-        """Writes all sentences to one WAV file at EXPORT_RATE; blocking (run on a worker thread)."""
-        import numpy as np
-        model = self._ready_model()
+        """Writes all sentences into one WAV file; blocking (run it on a worker thread)."""
+        worker = self._ready_worker()
         texts = [' '.join(str(s).split()) for s in sentences if str(s).strip()]
         if not texts:
             raise ValueError('Kaydedilecek metin yok.')
-        gap = np.zeros(int(EXPORT_RATE * SENTENCE_GAP), np.float32)
         self._exporting = True
+        stream = None
         try:
-            with wave.open(str(path), 'wb') as stream:
-                stream.setnchannels(1)
-                stream.setsampwidth(2)
-                stream.setframerate(EXPORT_RATE)
-                for index, text in enumerate(texts):
-                    speech = model.say(text, speed=float(speed), seed=0, sample_rate=EXPORT_RATE)
-                    stream.writeframes(_pcm16(speech.audio))
-                    stream.writeframes(_pcm16(gap))
-                    if progress:
-                        progress(index + 1, len(texts))
+            for index, text in enumerate(texts):
+                result = worker.request('say', text=text, speed=float(speed), rate=EXPORT_RATE, timeout=300)
+                with wave.open(io.BytesIO(base64.b64decode(result['audio']))) as clip:
+                    if stream is None:
+                        rate = clip.getframerate()
+                        stream = wave.open(str(path), 'wb')
+                        stream.setnchannels(1)
+                        stream.setsampwidth(2)
+                        stream.setframerate(rate)
+                    stream.writeframes(clip.readframes(clip.getnframes()))
+                    stream.writeframes(b'\x00\x00' * int(rate * SENTENCE_GAP))
+                if progress:
+                    progress(index + 1, len(texts))
         finally:
+            if stream is not None:
+                stream.close()
             self._exporting = False
         return len(texts)
+
+    def stop_worker(self):
+        worker, self._worker = self._worker, None
+        if worker:
+            worker.stop()
+
+    def shutdown(self):
+        self.stop_worker()
+
+    # ------------------------------------------------------------- install / remove
+    def _writable_root(self):
+        try:
+            self.install_root.mkdir(parents=True, exist_ok=True)
+            probe = self.install_root / '.yazma-denemesi'
+            probe.write_text('', encoding='utf-8')
+            probe.unlink()
+        except OSError as error:
+            raise RuntimeError(f"Program klasörüne yazılamıyor ({self.install_root}). Çevirgeç'i yazılabilir bir "
+                               'klasöre (örneğin Belgeler) taşıyın ya da yönetici olarak çalıştırın.') from error
+
+    def _progress(self, engine_id, message):
+        if message:
+            self._busy[engine_id] = message
+        else:
+            self._busy.pop(engine_id, None)
+        self._emit('tts_engines', {'engines': self.engines()})
+
+    def install_zip(self, path):
+        """Installs an engine package: a zip with motor.json at its root or inside one top folder."""
+        self._writable_root()
+        with zipfile.ZipFile(path) as archive:
+            names = [name for name in archive.namelist() if not name.endswith('/')]
+            manifest_name = min((name for name in names if PurePosixPath(name).name == 'motor.json'
+                                 and len(PurePosixPath(name).parts) <= 2), key=len, default=None)
+            if not manifest_name:
+                raise ValueError('Bu dosya bir Çevirgeç ses motoru paketi değil (motor.json yok).')
+            manifest = json.loads(archive.read(manifest_name).decode('utf-8'))
+            engine_id = str(manifest.get('id', ''))
+            if not engine_id or not all(c.isalnum() or c in '-_' for c in engine_id):
+                raise ValueError('Paketteki motor kimliği geçersiz.')
+            if manifest.get('protocol') != PROTOCOL:
+                raise ValueError('Bu ses motoru paketi bu Çevirgeç sürümüyle uyumlu değil.')
+            prefix = str(PurePosixPath(manifest_name).parent)
+            prefix = '' if prefix == '.' else prefix + '/'
+            if prefix + manifest.get('entry', 'worker.exe') not in names:
+                raise ValueError('Pakette motor programı eksik.')
+            staging = self.install_root / f'.{engine_id}.kuruluyor'
+            shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(parents=True)
+            base = staging.resolve()
+            members = [name for name in names if name.startswith(prefix)]
+            for index, name in enumerate(members):
+                target = (staging / name[len(prefix):]).resolve()
+                if base not in target.parents:
+                    shutil.rmtree(staging, ignore_errors=True)
+                    raise ValueError('Paket güvenli olmayan bir dosya yolu içeriyor.')
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(name) as source, open(target, 'wb') as out:
+                    shutil.copyfileobj(source, out)
+                if index % 200 == 0:
+                    self._progress(engine_id, f'Açılıyor… %{index * 100 // max(1, len(members))}')
+        final = self.install_root / engine_id
+        with self._lock:
+            if self._worker and self._worker.engine['id'] == engine_id:
+                self.stop_worker()
+                self._set('idle', '')
+            if final.exists():
+                if (final / 'data').exists():            # keep downloaded models and voices
+                    shutil.move(str(final / 'data'), str(staging / 'data'))
+                shutil.rmtree(final)
+            staging.rename(final)
+        self._progress(engine_id, None)
+        return engine_id
+
+    def download(self, engine_id):
+        """Downloads and installs an engine package from the release catalog (blocking)."""
+        item = next((item for item in self.engines() if item['id'] == engine_id), None)
+        if not item or not item['download']:
+            raise ValueError('Bu ses motoru için indirme adresi yok.')
+        self._writable_root()
+        partial = self.install_root / f'.{engine_id}.zip.part'
+        try:
+            self._progress(engine_id, 'İndiriliyor…')
+            request = urllib.request.Request(item['download']['url'], headers={'User-Agent': 'Cevirgec'})
+            try:
+                response = urllib.request.urlopen(request, timeout=60)
+            except urllib.error.HTTPError as error:
+                if error.code == 404:
+                    raise RuntimeError('Paket henüz yayınlanmamış. Elinizde paket dosyası varsa "Dosyadan kur" '
+                                       'ile kurabilirsiniz.') from error
+                raise
+            with response, open(partial, 'wb') as out:
+                total = int(response.headers.get('Content-Length') or 0)
+                done, last = 0, 0.0
+                while chunk := response.read(1 << 20):
+                    out.write(chunk)
+                    done += len(chunk)
+                    if time.monotonic() - last > 0.5:
+                        last = time.monotonic()
+                        self._progress(engine_id, f'İndiriliyor… %{done * 100 // total}' if total
+                                       else f'İndiriliyor… {done >> 20} MB')
+            self.install_zip(partial)
+        finally:
+            partial.unlink(missing_ok=True)
+            self._progress(engine_id, None)
+        return engine_id
+
+    def remove(self, engine_id):
+        folder = self.install_root / engine_id
+        if not (folder / 'motor.json').exists():
+            raise ValueError('Bu ses motoru paket olarak kurulu değil.')
+        with self._lock:
+            if self._worker and self._worker.engine['id'] == engine_id:
+                self.stop_worker()
+                self._set('idle', '')
+            shutil.rmtree(folder)
+        return self.engines()

@@ -75,6 +75,7 @@ def main():
         return bridge.request_close(close_later)
 
     window.events.closing += on_closing
+    window.events.closed += bridge.shutdown
 
     def on_drop(event):
         files = event.get('dataTransfer', {}).get('files', [])

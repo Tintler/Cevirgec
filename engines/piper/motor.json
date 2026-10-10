@@ -1,0 +1,25 @@
+{
+  "id": "piper",
+  "name": "Piper",
+  "version": "1.8.0",
+  "protocol": 1,
+  "description": "Hafif ve hızlı; Türkçe ve İngilizce dahil birçok dilde ses. Sesler ilk kullanımda indirilir (~63 MB).",
+  "license": "GPL-3.0 (motor), seslere göre değişir",
+  "homepage": "https://github.com/OHF-Voice/piper1-gpl",
+  "entry": "worker.exe",
+  "module": "engines.piper.worker",
+  "python_modules": ["piper", "onnxruntime"],
+  "speed": true,
+  "devices": ["cpu"],
+  "voices": [
+    {"id": "tr_TR-dfki-medium", "name": "dfki (Türkçe)", "language": "tr", "size_mb": 63, "path": "tr/tr_TR/dfki/medium/tr_TR-dfki-medium", "files": ["voices/tr_TR-dfki-medium.onnx"]},
+    {"id": "en_US-lessac-medium", "name": "Lessac (ABD, kadın)", "language": "en", "size_mb": 63, "path": "en/en_US/lessac/medium/en_US-lessac-medium", "files": ["voices/en_US-lessac-medium.onnx"]},
+    {"id": "en_US-ryan-medium", "name": "Ryan (ABD, erkek)", "language": "en", "size_mb": 63, "path": "en/en_US/ryan/medium/en_US-ryan-medium", "files": ["voices/en_US-ryan-medium.onnx"]},
+    {"id": "en_US-amy-medium", "name": "Amy (ABD, kadın)", "language": "en", "size_mb": 63, "path": "en/en_US/amy/medium/en_US-amy-medium", "files": ["voices/en_US-amy-medium.onnx"]},
+    {"id": "en_US-joe-medium", "name": "Joe (ABD, erkek)", "language": "en", "size_mb": 63, "path": "en/en_US/joe/medium/en_US-joe-medium", "files": ["voices/en_US-joe-medium.onnx"]},
+    {"id": "en_US-lessac-high", "name": "Lessac (ABD, kadın, yüksek kalite)", "language": "en", "size_mb": 114, "path": "en/en_US/lessac/high/en_US-lessac-high", "files": ["voices/en_US-lessac-high.onnx"]},
+    {"id": "en_GB-alan-medium", "name": "Alan (İngiliz, erkek)", "language": "en", "size_mb": 63, "path": "en/en_GB/alan/medium/en_GB-alan-medium", "files": ["voices/en_GB-alan-medium.onnx"]},
+    {"id": "en_GB-alba-medium", "name": "Alba (İskoç, kadın)", "language": "en", "size_mb": 63, "path": "en/en_GB/alba/medium/en_GB-alba-medium", "files": ["voices/en_GB-alba-medium.onnx"]},
+    {"id": "en_GB-cori-medium", "name": "Cori (İngiliz, kadın)", "language": "en", "size_mb": 63, "path": "en/en_GB/cori/medium/en_GB-cori-medium", "files": ["voices/en_GB-cori-medium.onnx"]}
+  ]
+}

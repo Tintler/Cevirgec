@@ -16,14 +16,14 @@ import traceback
 import webbrowser
 import zipfile
 
-from app_core import (APP_DIR, DEFAULT_CONFIG, Client, GracefulStop, PauseController, TranslationEngine,
+from app_core import (APP_DIR, ROOT, DEFAULT_CONFIG, Client, GracefulStop, PauseController, TranslationEngine,
                       _dedupe_glossary, analysis_from_checkpoints, analysis_terms, chapters_containing,
                       first_heading, load_analysis_selection, load_config, read, render_analysis, rows,
                       save_json, validate_config, validate_rerun)
 from epub_import import prepare
 from epub_meta import book_info
 from reader import Library
-from tts import Speaker
+from tts import Engines
 
 SETTINGS_KEYS = tuple(DEFAULT_CONFIG)
 LOCKED_WHILE_RUNNING = ('base_url', 'model', 'temperature', 'timeout_seconds', 'chunk_chars', 'max_tokens',
@@ -673,30 +673,61 @@ class Bridge:
         return True
 
     # ------------------------------------------------------------------ read aloud
-    def _speaker(self):
-        if getattr(self, '_speaker_cache', None) is None:
-            self._speaker_cache = Speaker(emit=self._emit)
-        return self._speaker_cache
+    def _engines(self):
+        directory = Path(APP_DIR)
+        cached = getattr(self, '_engines_cache', None)
+        if cached is None or cached.app_dir != directory:
+            self._engines_cache = Engines(directory, Path(ROOT) / 'engines', emit=self._emit,
+                                          prefs=lambda: self.ui_prefs().get('tts', {}))
+        return self._engines_cache
 
     def tts_status(self):
-        return self._speaker().status()
+        return self._engines().status()
 
-    def tts_load(self, device=None):
-        device = device or self.ui_prefs().get('tts', {}).get('device', 'auto')
-        return self._speaker().load(device)
+    def tts_engines(self):
+        return self._engines().engines()
+
+    def tts_load(self, language=None):
+        """Prepares the engine and voice chosen for a book language (in the background)."""
+        device = self.ui_prefs().get('tts', {}).get('device', 'auto')
+        return self._engines().load(language or 'tr', device)
 
     def tts_say(self, text, speed=1.0):
         try:
-            return self._speaker().say(text, speed)
+            return self._engines().say(text, speed)
         except Exception as error:
             return _error(error)
 
+    def tts_install_file(self):
+        """Installs an engine package chosen from disk (zip)."""
+        path = self._dialogs.open_file('Ses motoru paketi seç', ('Ses motoru paketi (*.zip)',)) if self._dialogs else None
+        if not path:
+            return None
+        return self._engine_job(lambda: self._engines().install_zip(path), 'kuruldu')
+
+    def tts_download(self, engine_id):
+        return self._engine_job(lambda: self._engines().download(engine_id), 'indirildi ve kuruldu')
+
+    def _engine_job(self, job, verb):
+        def work():
+            try:
+                engine_id = job()
+                self._emit('tts_engines', {'engines': self._engines().engines(), 'done': f'Ses motoru {verb}: {engine_id}'})
+            except Exception as error:
+                self._emit('tts_engines', {'engines': self._engines().engines(), 'error': str(error)})
+
+        threading.Thread(target=work, name='tts-install', daemon=True).start()
+        return {'started': True}
+
+    def tts_remove(self, engine_id):
+        return self._reading(self._engines().remove, engine_id)
+
     def tts_export(self, title, sentences, speed=1.0):
         """Asks where to save, then writes the section as one WAV file on a background thread."""
-        speaker = self._speaker()
-        if speaker.state != 'ready':
-            return {'error': 'Ses modeli henüz hazır değil.'}
-        if speaker.status()['exporting']:
+        engines = self._engines()
+        if engines.state != 'ready':
+            return {'error': 'Ses motoru henüz hazır değil.'}
+        if engines.status()['exporting']:
             return {'error': 'Bir kayıt zaten sürüyor.'}
         name = re.sub(r'[\\/:*?"<>|]+', ' ', str(title or 'bolum')).strip()[:120] or 'bolum'
         path = self._dialogs.save_file('Sesi kaydet', name + '.wav', ('WAV ses dosyası (*.wav)',)) if self._dialogs else None
@@ -707,7 +738,7 @@ class Bridge:
 
         def work():
             try:
-                count = speaker.export(sentences, speed, path,
+                count = engines.export(sentences, speed, path,
                                        lambda done, total: self._emit('tts_export', {'done': done, 'total': total}))
                 self._emit('tts_export', {'finished': True, 'path': str(path), 'count': count})
             except Exception as error:
@@ -715,6 +746,12 @@ class Bridge:
 
         threading.Thread(target=work, name='tts-export', daemon=True).start()
         return {'started': True, 'path': str(path)}
+
+    def shutdown(self):
+        """Stops helper processes when the window closes."""
+        cached = getattr(self, '_engines_cache', None)
+        if cached is not None:
+            cached.shutdown()
 
     # ------------------------------------------------------------------ window lifecycle
     def request_close(self, close):

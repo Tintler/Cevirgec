@@ -3,7 +3,7 @@
   import Icon from '../lib/Icon.svelte';
   import { app, act, toast, saveReaderPrefs, saveTtsPrefs, READER_DEFAULTS } from '../lib/state.svelte.js';
   import { call } from '../lib/api.js';
-  import { confirm, notice } from '../lib/confirm.svelte.js';
+  import { confirm } from '../lib/confirm.svelte.js';
   import { segment } from '../lib/sentences.js';
   import { player, play, pause, resume, stop, step, setSpeed, setSentences, setHooks } from '../lib/player.svelte.js';
 
@@ -18,7 +18,6 @@
   let article = $state();
   let saveTimer = null;
   let sentences = [];
-  let languageAccepted = null;   // book id whose non-Turkish language warning was accepted
   const SPEEDS = [0.8, 1, 1.25, 1.5, 1.75, 2];
 
   const PAPERS = {
@@ -91,39 +90,32 @@
     return span ? Number(span.dataset.i) : 0;
   }
 
-  async function ensureModel() {
+  const LANGUAGE_NAMES = { tr: 'Türkçe', en: 'İngilizce', de: 'Almanca', fr: 'Fransızca', es: 'İspanyolca', it: 'İtalyanca' };
+
+  // Starts (or reuses) the engine and voice chosen for this book's language and waits until it is ready.
+  async function ensureEngine() {
+    app.tts = await call('tts_load', book.language || 'tr');
+    while (app.tts.state === 'loading') await new Promise((r) => setTimeout(r, 200));
     if (app.tts.state === 'missing') {
-      await notice('Sesli okuma kurulu değil',
-        'Sesli okuma için EMA Lightning ses modeli gerekir. Komut isteminde şunu çalıştırıp uygulamayı yeniden başlatın:\n\n' +
-        'py -3 -m pip install ema-lightning\n\n' +
-        "NVIDIA ekran kartıyla daha hızlı çalışması için önce PyTorch'un CUDA sürümünü kurun " +
-        '(ayrıntılar KULLANIM.md içinde). İlk kullanımda model (~34 MB) internetten indirilir.');
+      const key = (book.language || 'tr').split(/[-_]/)[0].toLowerCase();
+      const go = await confirm({
+        title: 'Ses motoru yok',
+        message: `Bu kitabın dili ${LANGUAGE_NAMES[key] ?? `"${key}"`}; kurulu ses motorlarında bu dil için ses yok. ` +
+          'Ayarlar → Sesli okuma bölümünden bu dili destekleyen bir motor kurabilirsiniz (Piper birçok dili destekler).',
+        ok: 'Ayarlara git', cancel: 'Kapat',
+      });
+      if (go) app.view = 'settings';
       return false;
     }
-    if (app.tts.state === 'ready') return true;
-    if (app.tts.state !== 'loading') app.tts = await call('tts_load', app.ttsPrefs.device);
-    while (app.tts.state === 'loading') await new Promise((r) => setTimeout(r, 200));
-    if (app.tts.state !== 'ready') { toast(app.tts.message || 'Ses modeli yüklenemedi.', 'error'); return false; }
+    if (app.tts.state !== 'ready') { toast(app.tts.message || 'Ses motoru yüklenemedi.', 'error'); return false; }
     return true;
-  }
-
-  async function languageOk() {
-    const language = book.language || '';
-    if (!language || language.startsWith('tr') || languageAccepted === book.id) return true;
-    const yes = await confirm({
-      title: 'Kitap Türkçe değil',
-      message: `Bu kitabın dili "${language}" olarak işaretli. EMA Lightning yalnızca Türkçe okur; başka dillerdeki metin anlaşılmaz okunur. Yine de okunsun mu?`,
-      ok: 'Yine de oku', cancel: 'Vazgeç',
-    });
-    if (yes) languageAccepted = book.id;
-    return yes;
   }
 
   async function togglePlay() {
     if (player.playing) { pause(); return; }
     if (player.active) { resume(); return; }
     if (!sentences.length) { toast('Bu bölümde okunacak metin yok.'); return; }
-    if (!(await languageOk()) || !(await ensureModel())) return;
+    if (!(await ensureEngine())) return;
     setSpeed(app.ttsPrefs.speed);
     play(firstVisibleSentence());
   }
@@ -138,7 +130,7 @@
   async function exportSection() {
     if (app.ttsExport) return;
     if (!sentences.length) { toast('Bu bölümde kaydedilecek metin yok.'); return; }
-    if (!(await languageOk()) || !(await ensureModel())) return;
+    if (!(await ensureEngine())) return;
     const result = await act('tts_export', `${book.title} - ${sectionTitle}`, sentences, app.ttsPrefs.speed);
     if (result?.started) app.ttsExport = { done: 0, total: sentences.length };
   }
@@ -335,7 +327,7 @@
         <button class="icon-btn" title="Önceki bölüm (Alt+←)" disabled={section <= 0} onclick={() => load(section - 1)}><Icon name="back" /></button>
         <div class="where">
           <b>Bölüm {section + 1} / {sectionCount} · %{Math.round(app.reading.percent)}</b>
-          <small>{#if app.tts.state === 'loading'}{app.tts.message || 'Ses modeli yükleniyor…'}{:else if player.active}Cümle {player.index + 1} / {player.total}{#if player.waiting} · hazırlanıyor…{/if}{:else}{sectionTitle}{/if}</small>
+          <small>{#if app.tts.state === 'loading'}{app.tts.message || 'Ses modeli yükleniyor…'}{:else if player.active}Cümle {player.index + 1} / {player.total} · {app.engines.find((e) => e.id === app.tts.engine)?.name ?? ''}{#if player.waiting} · hazırlanıyor…{/if}{:else}{sectionTitle}{/if}</small>
         </div>
       </div>
       <div class="controls">
