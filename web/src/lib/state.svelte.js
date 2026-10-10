@@ -80,7 +80,11 @@ export async function init() {
     }
     for (const message of errors ?? []) toast(message, 'error');
   });
-  on('tts', (status) => (app.tts = status));
+  on('tts', (status) => {
+    app.tts = status;
+    // A voice may have been downloaded while loading: refresh the "downloaded" marks.
+    if (status.state === 'ready') call('tts_engines').then((list) => { if (Array.isArray(list)) app.engines = list; });
+  });
   on('tts_export', (data) => {
     if (!data.finished) { app.ttsExport = data; return; }
     app.ttsExport = null;
