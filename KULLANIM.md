@@ -28,7 +28,8 @@ Gereksinimler:
 
 - Python 3.10 veya üzeri
 - [LM Studio](https://lmstudio.ai/) ve yüklü bir sohbet modeli
-- Kaynak koddan arayüz için PySide6
+- Kaynak koddan arayüz için pywebview ve arayüzü derlemek için Node.js 20+
+- Windows'ta Microsoft Edge WebView2 (Windows 10/11'de hazır gelir)
 - Paketleme için PyInstaller
 - İsteğe bağlı EPUBCheck; JAR kullanılırsa Java
 
@@ -39,14 +40,23 @@ py -3 -m pip install -r requirements.txt
 GUI_BASLAT.cmd
 ```
 
+`GUI_BASLAT.cmd` ilk açılışta `web` klasöründeki arayüzü derler (`npm ci` ve `npm run build`). Arayüz kodu değiştiğinde yeniden derlemek için `web` klasöründe `npm run build` çalıştırın.
+
+```powershell
+# Arayüz geliştirme: Vite sunucusu ile anlık yenileme
+cd web; npm run dev
+py -3 desktop.py --dev
+```
+
 Linux/macOS terminali:
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 gui.py
+(cd web && npm ci && npm run build)
+python3 desktop.py
 ```
 
-Windows'ta `GUI_BASLAT.cmd` arayüzü, `BASLAT.cmd` etkileşimli CLI akışını başlatır. Linux ve macOS için hazır paketleme dosyası yoktur; Python ve PySide6 ile kaynak koddan çalıştırılır.
+Windows'ta `GUI_BASLAT.cmd` arayüzü, `BASLAT.cmd` etkileşimli CLI akışını başlatır. Linux ve macOS için hazır paketleme dosyası yoktur; Python, pywebview ve Node.js ile kaynak koddan çalıştırılır.
 
 ## LM Studio bağlantısı ve model seçimi
 
@@ -58,7 +68,7 @@ http://127.0.0.1:1234/v1
 
 Çevirgeç model keşfi için önce `/api/v1/models`, gerektiğinde `/api/v0/models`; çeviri ve analiz istekleri için `/api/v1/chat` kullanır. Tek model yüklüyse otomatik seçilir. Birden fazla model varsa açılır listeden seçim yapılır; model alanı serbest metin değildir.
 
-Ana ekranda seçilen modelin yanında LM Studio'da fiilen yüklü model ve algılanabiliyorsa aktif context uzunluğu gösterilir. **Yenile** düğmesi sunucu durumunu ve model listesini yeniden sorgular.
+Sol alttaki LM Studio kartında bağlantı durumu, seçili model ve algılanabiliyorsa aktif context uzunluğu gösterilir. Karttaki yenile düğmesi sunucu durumunu ve model listesini yeniden sorgular.
 
 Base URL yalnızca `localhost`, `127.0.0.1` veya `::1` adreslerini kabul eder. LM Studio anahtar gerektirecek şekilde yapılandırıldıysa `LM_STUDIO_API_KEY` ortam değişkeni kullanılabilir.
 
@@ -66,26 +76,24 @@ Base URL yalnızca `localhost`, `127.0.0.1` veya `::1` adreslerini kabul eder. L
 
 Yeni bir çeviri için:
 
-1. **EPUB dosyası** alanından kaynak kitabı seçin.
-2. **Çalışma klasörü** alanından projenin oluşturulacağı ana klasörü seçin.
-3. Gerekirse **Yenile** ile model listesini güncelleyin.
-4. İsterseniz **Ön analiz yap** seçeneğini açın.
-5. **Çeviriyi Başlat** düğmesine basın.
+1. **Çeviri** sekmesinde **EPUB aç** ile kaynak kitabı seçin.
+2. Çalışma klasörü varsayılan olarak EPUB'un bulunduğu klasördür; değiştirmek için kitap kartındaki klasör yoluna tıklayın.
+3. Sol alttaki LM Studio kartında modelin yüklü olduğunu kontrol edin.
+4. İsterseniz alt çubuktaki **Ön analiz** anahtarını açın.
+5. **Çeviriyi başlat** düğmesine basın.
 6. Kitaba özgü terimleri girin veya sözlüğü boş bırakın.
 7. Ön analiz açıksa analiz edilecek hikâye bölümlerini seçin.
 
 Uygulama `<KitapAdı>-ceviri` adlı proje klasörü oluşturur. Aynı ad kullanımdaysa numaralı yeni bir ad seçilir.
 
-### Üst alan
+### Ekran düzeni
 
-- **Seçili model:** Çeviride kullanılacak yüklü model.
-- **LM Studio:** Yüklü model ve algılanan context uzunluğu.
-- **Yenile:** Model listesini ve sunucu durumunu yeniden sorgular.
-- **EPUB dosyası:** Yeni projenin kaynak EPUB'u.
-- **Çalışma klasörü:** Projenin oluşturulacağı ana klasör.
+- **Sol kenar çubuğu:** **Çeviri**, **Okuma** ve **Ayarlar** sekmeleri; tema düğmesi ve LM Studio durum kartı.
+- **Kitap kartı:** Kapak, başlık, yazar, bölüm/karakter sayısı, kaynak EPUB ve çalışma klasörü yolları ile tamamlanan bölüm ve yüzde. Yollara tıklayarak EPUB veya çalışma klasörü değiştirilebilir.
+- **EPUB aç:** Yeni projenin kaynak EPUB'unu seçer.
 - **Projeyi sürdür:** Mevcut `<KitapAdı>-ceviri` klasörünü açar ve ilk eksik checkpoint'ten devam eder.
-- **Terim düzenle:** Projenin sözlüğünü açar ve gerekirse etkilenen tamamlanmış bölümlerin yeniden çevrilmesini önerir.
-- **Ayarlar:** Kitap/EPUB ve LM Studio/model seçeneklerini açar.
+- **Terim sözlüğü** (alt çubuk): Projenin sözlüğünü açar ve gerekirse etkilenen tamamlanmış bölümlerin yeniden çevrilmesini önerir.
+- **Ayarlar** sekmesi: Görünüm, LM Studio/model, kitap/EPUB ve gelişmiş seçenekler.
 
 ### Bölüm listesi ve sekmeler
 
@@ -103,16 +111,16 @@ Başlıca durumlar:
 
 Sağ sekmeler:
 
-- **Durum:** Aktif bölüm, parça sayısı ve ilerleme. Yüzde değeri çubuğun sağındaki sabit koyu kutuda gösterilir.
+- **Durum:** Aşama, aktif bölüm ve parça, tamamlanan bölüm, son kayıt zamanı ve ilerleme. Kitap geneli yüzde alt çubukta da gösterilir.
 - **Konsol:** API istekleri, token bilgileri, tekrarlar, uyarılar ve hatalar.
-- **Ön Analiz:** Kaydedilmiş analiz sonuçları.
-- **Kaynak / Türkçe:** Seçilen bölümün iki metnini yan yana gösterir.
+- **Ön analiz:** Kaydedilmiş analiz sonuçları.
+- **Kaynak / Türkçe:** Seçilen bölümün iki metnini yan yana gösterir; sözlük terimleri vurgulanır.
 
 Konsol kayıtları aynı zamanda proje içindeki `translation.log` dosyasına yazılır.
 
 ### Duraklatma ve güvenli kapanış
 
-**Duraklat** aktif LM Studio isteğini kesmez. İstek tamamlanır, geçerli sonuç checkpoint'e yazılır ve program sonraki parçaya geçmeden bekler. Düğme önce **Duraklatılıyor…**, ardından **Devam Et** olur.
+**Duraklat** aktif LM Studio isteğini kesmez. İstek tamamlanır, geçerli sonuç checkpoint'e yazılır ve program sonraki parçaya geçmeden bekler. Düğme önce **Duraklatılıyor…**, ardından **Devam et** olur.
 
 Pencere kapatılırsa devam eden API isteği ile kayıt işleminin tamamlanması beklenir. Görev Yöneticisi veya işletim sistemiyle zorla sonlandırma engellenemez; bu durumda son tamamlanmış checkpoint korunur.
 
@@ -135,7 +143,7 @@ Sözlük isteğe bağlıdır ve `glossary.json` içinde proje bazında saklanır
 
 Düzeltme yine başarısızsa varsayılan davranış ayrıntıyı `glossary_fixes.log` dosyasına yazıp daha az eksik sonuçla devam etmektir. **Katı sözlük** açıksa bölüm durur ve geçersiz sonuç kaydedilmez. Türkçe çekimli biçimler belirli ek ve ses değişimi kurallarıyla kabul edilir.
 
-**Terim düzenle** ile terim eklenir, kaldırılır veya karşılığı değiştirilirse uygulama bu terimin geçtiği tamamlanmış bölümleri bulur ve yeniden çevirmeyi önerir. Henüz çevrilmemiş bölümler zaten güncel sözlüğü kullanır.
+**Terim sözlüğü** ile terim eklenir, kaldırılır veya karşılığı değiştirilirse uygulama bu terimin geçtiği tamamlanmış bölümleri bulur ve yeniden çevirmeyi önerir. Henüz çevrilmemiş bölümler zaten güncel sözlüğü kullanır.
 
 Çalışan bölümün sözlüğü checkpoint'e sabitlenir. Tamamlanmamış bölümün kaynak, prompt veya glossary dosyasını elle değiştirmek güvenlik hatasına neden olur.
 
@@ -208,7 +216,7 @@ Kitabın yaklaşık %25, %50 ve %75 noktalarında, ayrıca bir sonraki bölümü
 
 ## Ayarlar
 
-Emin değilseniz varsayılan değerleri koruyun. **Varsayılan ayarlara dön** güvenli başlangıç değerlerini geri yükler.
+Emin değilseniz varsayılan değerleri koruyun. **Varsayılanlar** güvenli başlangıç değerlerini geri yükler; değişiklikler **Kaydet** ile uygulanır. Çeviri sürerken LM Studio ve model ayarları kilitlidir. Koyu/açık tema da bu sekmeden (ya da kenar çubuğundaki düğmeden) seçilir ve `ui.json` dosyasında saklanır.
 
 | Grup | Ayar | İşlevi |
 |---|---|---|
@@ -315,9 +323,10 @@ GUI ve CLI aynı `TranslationEngine` sınıfını kullanır; çeviri ve checkpoi
 ## Windows EXE oluşturma
 
 1. Proje klasöründe `BUILD.cmd` çalıştırılır.
-2. Sabitlenmiş PySide6/PyInstaller bağımlılıkları yüklenir.
-3. `dist\Cevirgec.exe` oluşturulur.
-4. `config.json` ve `translation_prompt.txt` EXE'nin yanına kopyalanır.
+2. Sabitlenmiş pywebview/PyInstaller bağımlılıkları yüklenir.
+3. `web` klasöründe arayüz derlenir (`npm ci`, `npm run build`); Node.js gereklidir.
+4. `dist\Cevirgec.exe` oluşturulur.
+5. `config.json` ve `translation_prompt.txt` EXE'nin yanına kopyalanır.
 
 PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı için başlangıç birkaç saniye sürebilir. İmzasız PyInstaller uygulamaları bazı antivirüs ürünlerinde yanlış pozitif oluşturabilir. Linux ve macOS için hazır paketleme komut dosyası sağlanmaz.
 
@@ -325,7 +334,11 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 
 | Dosya | Görevi |
 |---|---|
-| `gui.py` | PySide6 arayüzü ve kullanıcı etkileşimi |
+| `desktop.py` | Masaüstü giriş noktası; arayüzü pywebview (WebView2) penceresinde açar |
+| `bridge.py` | Arayüzden bağımsız uygulama denetleyicisi; arayüzün çağırdığı işlemler ve olaylar |
+| `web/` | Svelte arayüz kaynak kodu (`npm run build` ile `web/dist` oluşur) |
+| `epub_meta.py` | EPUB başlık, yazar ve kapak bilgisi |
+| `gui.py` | Eski PySide6 arayüzü (geçiş sürecinde korunuyor) |
 | `app_core.py` | Ayarlar, LM Studio istemcisi, çeviri/analiz/checkpoint çekirdeği |
 | `epub_import.py` | EPUB'u proje ve Markdown bölümlerine dönüştürme |
 | `epub_output.py` | Çevrilmiş EPUB'u üretme ve doğrulama |
@@ -334,6 +347,7 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `config.json` | Kalıcı kullanıcı ayarları |
 | `requirements.txt` | Sabitlenmiş çalışma ve derleme bağımlılıkları |
 | `tests/test_core.py` | Çekirdek, checkpoint ve EPUB testleri |
+| `tests/test_bridge.py` | Arayüz denetleyicisi akış testleri |
 
 ## Testler
 

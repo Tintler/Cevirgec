@@ -22,3 +22,11 @@ GELISTIRME.md
 # Kisisel yerel notlar ve yedekler
 *.bak
 *~
+
+# Web arayuzu (Svelte) bagimliliklari ve derleme ciktisi
+web/node_modules/
+web/dist/
+
+# Arayuz tercihleri (tema vb.) ve yerel arac ayarlari
+ui.json
+.claude/

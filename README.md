@@ -7,7 +7,7 @@
 
 ![Çevirgeç arayüzü](ONIZLEME.png)
 
-Çevirgeç, DRM içermeyen EPUB kitaplarını LM Studio'da çalışan yerel bir modelle İngilizceden Türkçeye çevirmek için geliştirilmiş PySide6 tabanlı masaüstü uygulaması ve komut satırı aracıdır. Kaynak EPUB'u bölümlere ayırır, çeviriyi güvenli kontrol noktalarıyla yürütür ve görselleri, temel metadata alanlarını ve EPUB içi bağlantıları koruyarak yeni bir EPUB oluşturur.
+Çevirgeç, DRM içermeyen EPUB kitaplarını LM Studio'da çalışan yerel bir modelle İngilizceden Türkçeye çevirmek için geliştirilmiş masaüstü uygulaması ve komut satırı aracıdır. Kaynak EPUB'u bölümlere ayırır, çeviriyi güvenli kontrol noktalarıyla yürütür ve görselleri, temel metadata alanlarını ve EPUB içi bağlantıları koruyarak yeni bir EPUB oluşturur.
 
 > **English:** Çevirgeç is a Turkish GUI and CLI application for translating DRM-free EPUB books with a local model served by LM Studio. It supports resumable checkpoints, optional book analysis, terminology enforcement and EPUB reconstruction.
 
@@ -16,7 +16,7 @@
 
 ## Başlıca özellikler
 
-- Aynı çeviri çekirdeğini kullanan PySide6 arayüzü ve CLI
+- Aynı çeviri çekirdeğini kullanan modern masaüstü arayüzü (Svelte + pywebview, koyu/açık tema) ve CLI
 - LM Studio'da yüklü modelleri algılama ve model seçimi
 - EPUB içindekiler yapısına göre bölüm içe aktarma
 - Görsel, kapak, temel metadata, tablo, dipnot ve iç bağlantı koruması
@@ -31,11 +31,12 @@
 
 - Python 3.10 veya üzeri
 - [LM Studio](https://lmstudio.ai/) ve yüklü bir sohbet modeli
-- Kaynak koddan arayüz için `PySide6`
+- Kaynak koddan arayüz için `pywebview` ve arayüzü derlemek için [Node.js](https://nodejs.org/) 20+
+- Windows'ta Microsoft Edge WebView2 (Windows 10/11'de hazır gelir)
 - Paketleme için `PyInstaller`
 - İsteğe bağlı EPUBCheck; JAR kullanılırsa Java
 
-Windows'ta hazır `.cmd` başlatıcıları ve `.exe` derleme desteği vardır. Python ve PySide6 bulunan diğer sistemlerde uygulama kaynak koddan çalıştırılabilir; Linux ve macOS için hazır paketleme dosyası sağlanmaz.
+Windows'ta hazır `.cmd` başlatıcıları ve `.exe` derleme desteği vardır. Python, pywebview ve Node.js bulunan diğer sistemlerde uygulama kaynak koddan çalıştırılabilir; Linux ve macOS için hazır paketleme dosyası sağlanmaz.
 
 ## Hızlı başlangıç
 
@@ -55,10 +56,10 @@ Ardından:
 
 1. LM Studio'da kullanacağınız modeli yükleyin.
 2. Yerel sunucuyu başlatın. Varsayılan adres `http://127.0.0.1:1234/v1` olmalıdır.
-3. Windows'ta `GUI_BASLAT.cmd`, diğer sistemlerde `python3 gui.py` çalıştırın.
-4. Kaynak EPUB'u ve çalışma klasörünü seçin.
-5. Gerekirse **Yenile** ile model listesini güncelleyin.
-6. **Çeviriyi Başlat** düğmesine basın.
+3. Windows'ta `GUI_BASLAT.cmd` çalıştırın (ilk açılışta arayüz derlenir). Diğer sistemlerde `web` klasöründe `npm ci && npm run build`, ardından `python3 desktop.py`.
+4. **EPUB aç** ile kaynak kitabı seçin; çalışma klasörü varsayılan olarak EPUB'un klasörüdür ve kitap kartından değiştirilebilir.
+5. LM Studio durumunu sol alttaki kartta kontrol edin; gerekirse yenileyin.
+6. **Çeviriyi başlat** düğmesine basın.
 7. Terim sözlüğünü doldurun veya boş bırakın; isterseniz ön analizi etkinleştirin.
 
 Uygulama çalışma klasöründe `<KitapAdı>-ceviri` adlı bir proje oluşturur. İşlem kesilirse **Projeyi sürdür** ile tamamlanan parçalar korunarak devam edilir.

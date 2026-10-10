@@ -1,0 +1,84 @@
+import { call, on } from './api.js';
+
+export const app = $state({
+  view: 'translate',
+  theme: 'dark',
+  book: { epub: '', folder: '', project: '', title: '', author: '', cover: null, chars: 0 },
+  chapters: [],
+  status: { runtime: 'idle', phase: 'Başlatılmadı', current: '', last_saved: '', progress: { done: 0, total: 0, percent: 0 } },
+  analysis: '',
+  log: [],
+  models: { state: 'probing', loaded: [], model: '', message: '' },
+  review: null,
+  // Translate screen view state, kept here so it survives switching tabs.
+  translate: { tab: 'preview', selected: null, preAnalysis: false },
+});
+
+export const toasts = $state([]);
+
+export function toast(message, kind = 'info') {
+  const item = { id: Math.random(), message, kind };
+  toasts.push(item);
+  setTimeout(() => {
+    const index = toasts.indexOf(item);
+    if (index >= 0) toasts.splice(index, 1);
+  }, kind === 'error' ? 7000 : 4000);
+}
+
+export function applySnapshot(snapshot) {
+  if (!snapshot) return;
+  app.book = snapshot.book;
+  app.chapters = snapshot.chapters;
+  app.status = snapshot.status;
+  app.analysis = snapshot.analysis;
+  if (snapshot.model && !app.models.model) app.models.model = snapshot.model;
+}
+
+const LOG_LIMIT = 5000;
+
+export async function init() {
+  on('log', ({ line, last_saved }) => {
+    app.log.push(line);
+    if (app.log.length > LOG_LIMIT) app.log.splice(0, app.log.length - LOG_LIMIT);
+    app.status.last_saved = last_saved;
+  });
+  on('status', (status) => (app.status = status));
+  on('chapters', ({ chapters }) => (app.chapters = chapters));
+  on('analysis', ({ text }) => (app.analysis = text));
+  on('models', (data) => (app.models = { loaded: [], message: '', ...app.models, ...data }));
+  on('review', (data) => (app.review = data));
+  on('finished', ({ outcome, message, snapshot }) => {
+    applySnapshot(snapshot);
+    app.review = null;
+    if (outcome === 'failed') {
+      toast('Çeviri durdu: ' + message, 'error');
+      app.translate.tab = 'console';
+    }
+    else toast(message, outcome === 'done' ? 'ok' : 'info');
+  });
+  const prefs = await call('ui_prefs');
+  setTheme(prefs?.theme ?? 'dark', false);
+  applySnapshot(await call('snapshot'));
+  call('refresh_models');
+}
+
+export function setTheme(theme, save = true) {
+  app.theme = theme;
+  document.documentElement.dataset.theme = theme;
+  if (save) call('save_ui_prefs', { theme });
+}
+
+// Calls a backend method and turns {error} results into a toast; returns null on error.
+export async function act(method, ...args) {
+  try {
+    const result = await call(method, ...args);
+    if (result && typeof result === 'object' && 'error' in result) {
+      toast(result.error, 'error');
+      return null;
+    }
+    return result;
+  } catch (error) {
+    toast(String(error?.message ?? error), 'error');
+    return null;
+  }
+}

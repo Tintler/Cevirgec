@@ -19,7 +19,14 @@
   --dim: #8b8b94; --accent: #c98a00; --accent-hover: #b07800; --on-accent: #fff;
   --ok: #16a34a; --danger: #dc2626; --hl: rgba(240,180,41,.28); --paper: #fbfaf7; --ink: #26241f;
 }
+:root { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface-active); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
 html, body { height: 100%; }
 body { background: var(--window); color: var(--text); font: 14px/1.45 Inter, system-ui, sans-serif; overflow: hidden; }
 svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
