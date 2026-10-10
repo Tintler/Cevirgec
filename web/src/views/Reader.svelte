@@ -1,8 +1,11 @@
 <script>
   import { tick, untrack } from 'svelte';
   import Icon from '../lib/Icon.svelte';
-  import { app, act, saveReaderPrefs, READER_DEFAULTS } from '../lib/state.svelte.js';
+  import { app, act, toast, saveReaderPrefs, saveTtsPrefs, READER_DEFAULTS } from '../lib/state.svelte.js';
   import { call } from '../lib/api.js';
+  import { confirm, notice } from '../lib/confirm.svelte.js';
+  import { segment } from '../lib/sentences.js';
+  import { player, play, pause, resume, stop, step, setSpeed, setSentences, setHooks } from '../lib/player.svelte.js';
 
   let { onclose } = $props();
 
@@ -12,7 +15,11 @@
   let panel = $state('toc');          // 'toc' | 'bookmarks' | null
   let showAa = $state(false);
   let pageWrap = $state();
+  let article = $state();
   let saveTimer = null;
+  let sentences = [];
+  let languageAccepted = null;   // book id whose non-Turkish language warning was accepted
+  const SPEEDS = [0.8, 1, 1.25, 1.5, 1.75, 2];
 
   const PAPERS = {
     theme: null,
@@ -27,8 +34,9 @@
   const currentToc = $derived(book ? book.toc.reduce((found, entry, i) => (entry.section <= section ? i : found), -1) : -1);
   const bookmarkHere = $derived(book?.bookmarks.find((b) => b.section === section && Math.abs(b.offset - app.reading.offset) < 0.015) ?? null);
 
-  async function load(number, { offset = 0, anchor = '' } = {}) {
+  async function load(number, { offset = 0, anchor = '', continueReading = false } = {}) {
     if (!book || number < 0 || number >= sectionCount) return;
+    if (player.active && !continueReading) stop();
     savePosition(true);
     loading = true;
     const result = await act('reader_section', book.id, number);
@@ -43,7 +51,96 @@
     const target = anchor ? pageWrap.querySelector(`[id="${CSS.escape(anchor)}"]`) : null;
     if (target) target.scrollIntoView({ block: 'start' });
     else pageWrap.scrollTop = offset * Math.max(0, pageWrap.scrollHeight - pageWrap.clientHeight);
+    sentences = segment(article);
+    setSentences(sentences);
     savePosition(true);
+  }
+
+  // ---- read aloud
+  function highlight(index) {
+    for (const el of article?.querySelectorAll('.s.now') ?? []) el.classList.remove('now');
+    const spans = article?.querySelectorAll(`.s[data-i="${index}"]`) ?? [];
+    for (const el of spans) el.classList.add('now');
+    const first = spans[0];
+    if (first) {
+      const box = first.getBoundingClientRect(), view = pageWrap.getBoundingClientRect();
+      if (box.top < view.top + 40 || box.bottom > view.bottom - 60) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }
+
+  setHooks({
+    onsentence: highlight,
+    onerror: (message) => toast(message, 'error'),
+    onend: async () => {
+      if (section < sectionCount - 1) {
+        await load(section + 1, { continueReading: true });
+        if (player.active) play(0);
+      } else {
+        stop();
+        highlight(-1);
+        toast('Kitabın sonuna gelindi.');
+      }
+    },
+  });
+
+  $effect(() => () => { stop(); });   // leaving the reader ends the reading session
+
+  function firstVisibleSentence() {
+    const top = pageWrap.getBoundingClientRect().top;
+    const span = [...article.querySelectorAll('.s')].find((el) => el.getBoundingClientRect().bottom > top + 8);
+    return span ? Number(span.dataset.i) : 0;
+  }
+
+  async function ensureModel() {
+    if (app.tts.state === 'missing') {
+      await notice('Sesli okuma kurulu değil',
+        'Sesli okuma için EMA Lightning ses modeli gerekir. Komut isteminde şunu çalıştırıp uygulamayı yeniden başlatın:\n\n' +
+        'py -3 -m pip install ema-lightning\n\n' +
+        "NVIDIA ekran kartıyla daha hızlı çalışması için önce PyTorch'un CUDA sürümünü kurun " +
+        '(ayrıntılar KULLANIM.md içinde). İlk kullanımda model (~34 MB) internetten indirilir.');
+      return false;
+    }
+    if (app.tts.state === 'ready') return true;
+    if (app.tts.state !== 'loading') app.tts = await call('tts_load', app.ttsPrefs.device);
+    while (app.tts.state === 'loading') await new Promise((r) => setTimeout(r, 200));
+    if (app.tts.state !== 'ready') { toast(app.tts.message || 'Ses modeli yüklenemedi.', 'error'); return false; }
+    return true;
+  }
+
+  async function languageOk() {
+    const language = book.language || '';
+    if (!language || language.startsWith('tr') || languageAccepted === book.id) return true;
+    const yes = await confirm({
+      title: 'Kitap Türkçe değil',
+      message: `Bu kitabın dili "${language}" olarak işaretli. EMA Lightning yalnızca Türkçe okur; başka dillerdeki metin anlaşılmaz okunur. Yine de okunsun mu?`,
+      ok: 'Yine de oku', cancel: 'Vazgeç',
+    });
+    if (yes) languageAccepted = book.id;
+    return yes;
+  }
+
+  async function togglePlay() {
+    if (player.playing) { pause(); return; }
+    if (player.active) { resume(); return; }
+    if (!sentences.length) { toast('Bu bölümde okunacak metin yok.'); return; }
+    if (!(await languageOk()) || !(await ensureModel())) return;
+    setSpeed(app.ttsPrefs.speed);
+    play(firstVisibleSentence());
+  }
+
+  function cycleSpeed() {
+    const next = SPEEDS[(SPEEDS.indexOf(app.ttsPrefs.speed) + 1) % SPEEDS.length] ?? 1;
+    app.ttsPrefs.speed = next;
+    setSpeed(next);
+    saveTtsPrefs();
+  }
+
+  async function exportSection() {
+    if (app.ttsExport) return;
+    if (!sentences.length) { toast('Bu bölümde kaydedilecek metin yok.'); return; }
+    if (!(await languageOk()) || !(await ensureModel())) return;
+    const result = await act('tts_export', `${book.title} - ${sectionTitle}`, sentences, app.ttsPrefs.speed);
+    if (result?.started) app.ttsExport = { done: 0, total: sentences.length };
   }
 
   function currentOffset() {
@@ -77,6 +174,8 @@
 
   function onPageClick(event) {
     const link = event.target.closest('a');
+    const sentence = event.target.closest('.s');
+    if (!link && sentence && player.active) { play(Number(sentence.dataset.i)); return; }
     if (!link) return;
     event.preventDefault();
     if (link.dataset.ext) call('open_external', link.dataset.ext);
@@ -118,6 +217,7 @@
   function keydown(event) {
     if (event.target.closest('input, textarea, select')) return;
     if (event.key === 'Escape') { showAa = false; }
+    if (event.code === 'Space' && player.active && !event.target.closest('button')) { event.preventDefault(); togglePlay(); }
     if (event.altKey && event.key === 'ArrowRight') load(section + 1);
     if (event.altKey && event.key === 'ArrowLeft') load(section - 1);
   }
@@ -216,25 +316,41 @@
       <div class="page-wrap" bind:this={pageWrap} onscroll={() => savePosition()}
         style:--paper={paper ? paper.bg : 'var(--panel)'} style:--ink={paper ? paper.ink : 'var(--text)'}>
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-        <article class="page selectable" class:faded={loading} onclick={onPageClick}
+        <article class="page selectable" class:faded={loading} class:listening={player.active} bind:this={article} onclick={onPageClick}
           style:font-size="{app.reader.size}px" style:line-height={app.reader.leading}
           style:font-family={fonts[app.reader.font]} style:max-width="{app.reader.width}px">
           {@html html}
           {#if html && section < sectionCount - 1}
             <button class="next-section" onclick={() => load(section + 1)}>Sonraki bölüm <Icon name="forward" size={16} /></button>
           {:else if html}
-            <div class="the-end">Kitabın sonu</div>
+            <div class="the-end no-tts">Kitabın sonu</div>
           {/if}
         </article>
       </div>
     </div>
 
-    <div class="bar-bottom">
-      <button class="icon-btn" title="Önceki bölüm (Alt+←)" disabled={section <= 0} onclick={() => load(section - 1)}><Icon name="back" /></button>
-      <span class="pos">Bölüm {section + 1} / {sectionCount}</span>
-      <div class="track"><i style:width="{app.reading.percent}%"></i></div>
-      <span class="pos">%{Math.round(app.reading.percent)}</span>
-      <button class="icon-btn" title="Sonraki bölüm (Alt+→)" disabled={section >= sectionCount - 1} onclick={() => load(section + 1)}><Icon name="forward" /></button>
+    <div class="player">
+      <div class="track book" title="Kitapta %{Math.round(app.reading.percent)}"><i style:width="{app.reading.percent}%"></i></div>
+      <div class="left">
+        <button class="icon-btn" title="Önceki bölüm (Alt+←)" disabled={section <= 0} onclick={() => load(section - 1)}><Icon name="back" /></button>
+        <div class="where">
+          <b>Bölüm {section + 1} / {sectionCount} · %{Math.round(app.reading.percent)}</b>
+          <small>{#if app.tts.state === 'loading'}Ses modeli yükleniyor…{:else if player.active}Cümle {player.index + 1} / {player.total}{#if player.waiting} · hazırlanıyor…{/if}{:else}{sectionTitle}{/if}</small>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="icon-btn" title="Önceki cümle" disabled={!player.active} onclick={() => step(-1)}><Icon name="prev" /></button>
+        <button class="play" title={player.playing ? 'Duraklat (Boşluk)' : 'Sesli oku'} onclick={togglePlay}>
+          <Icon name={player.playing ? 'pause' : 'play'} size={20} /></button>
+        <button class="icon-btn" title="Sonraki cümle" disabled={!player.active} onclick={() => step(1)}><Icon name="next" /></button>
+        {#if player.active}<button class="icon-btn" title="Okumayı bitir" onclick={() => { stop(); highlight(-1); }}><Icon name="stop" /></button>{/if}
+      </div>
+      <div class="right">
+        <button class="chip acc" title="Okuma hızı" onclick={cycleSpeed}>{app.ttsPrefs.speed.toLocaleString('tr-TR')}×</button>
+        <button class="chip" title="Bu bölümü WAV ses dosyası olarak kaydet" disabled={Boolean(app.ttsExport)} onclick={exportSection}>
+          <Icon name="download" size={14} />{app.ttsExport ? `Kaydediliyor ${app.ttsExport.done}/${app.ttsExport.total}` : 'Kaydet'}</button>
+        <button class="icon-btn" title="Sonraki bölüm (Alt+→)" disabled={section >= sectionCount - 1} onclick={() => load(section + 1)}><Icon name="forward" /></button>
+      </div>
     </div>
   </section>
 {/if}
@@ -302,6 +418,22 @@
   .next-section:hover { background: color-mix(in srgb, var(--ink) 16%, transparent); }
   .the-end { text-align: center; margin-top: 48px; font: 600 13px var(--sans); letter-spacing: .12em; text-transform: uppercase; opacity: .5; }
 
-  .bar-bottom { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--outline); background: var(--panel); }
-  .pos { font-size: 12px; color: var(--dim); white-space: nowrap; }
+  .page.listening :global(.s) { cursor: pointer; border-radius: 3px; }
+  .page.listening :global(.s:hover) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .page :global(.s.now) { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent); }
+
+  .player { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; padding: 10px 16px; border-top: 1px solid var(--outline); background: var(--panel); }
+  .player .book { position: absolute; left: 0; right: 0; top: -1px; height: 2px; border-radius: 0; background: transparent; }
+  .left, .right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .right { justify-content: flex-end; }
+  .where { min-width: 0; }
+  .where b, .where small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .where b { font-size: 13px; }
+  .where small { color: var(--dim); font-size: 12px; }
+  .controls { display: flex; align-items: center; gap: 6px; }
+  .play { width: 44px; height: 44px; border-radius: 50%; background: var(--text); color: var(--window); display: grid; place-items: center; }
+  .play:hover { transform: scale(1.05); }
+  .chip { height: 30px; padding: 0 12px; border-radius: 999px; background: var(--surface); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .chip:not(:disabled):hover { background: var(--surface-hover); }
+  .chip.acc { color: var(--accent); min-width: 54px; justify-content: center; }
 </style>

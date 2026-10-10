@@ -8,6 +8,7 @@ Bu belge Çevirgeç'in kurulumu, arayüzü, ayarları, proje yapısı, EPUB üre
 - [LM Studio bağlantısı ve model seçimi](#lm-studio-bağlantısı-ve-model-seçimi)
 - [Arayüz kullanımı](#arayüz-kullanımı)
 - [Okuma](#okuma)
+- [Sesli okuma](#sesli-okuma)
 - [Özel terim sözlüğü](#özel-terim-sözlüğü)
 - [İsteğe bağlı ön analiz](#isteğe-bağlı-ön-analiz)
 - [Çeviri, kontrol noktaları ve yeniden deneme](#çeviri-kontrol-noktaları-ve-yeniden-deneme)
@@ -141,6 +142,36 @@ Yeniden çeviri yalnızca seçilen bölümü işler. Tamamlandığında `TAM-CEV
 - **Görünüm** (T simgesi) ile yazı boyutu, yazı tipi (serif/sans), satır aralığı, sütun genişliği ve sayfa rengi (tema, koyu, sepya, açık) seçilir; tercih tüm kitaplar için saklanır.
 - Bölümler arasında alttaki oklarla, bölüm sonundaki **Sonraki bölüm** düğmesiyle ya da `Alt+←` / `Alt+→` ile geçilir. Alt çubuk kitap genelindeki ilerlemeyi gösterir.
 - Kitaplar uygulamanın kendi yazı tipi ve renkleriyle gösterilir. Yayıncının CSS'i, betikleri ve dış kaynakları uygulanmaz; içerik güvenli bir HTML alt kümesine dönüştürülür. Kitap içindeki web bağlantıları sistem tarayıcısında açılır.
+
+## Sesli okuma
+
+Okuyucu, açık kitabı [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) ile Türkçe sesli okuyabilir. Model yereldir; metin bilgisayardan çıkmaz. Yalnızca Türkçe okur; dili Türkçe olmayan kitaplarda uyarı verilir.
+
+**Kurulum (isteğe bağlı, kaynak koddan çalıştırırken):**
+
+```powershell
+py -3 -m pip install -r requirements-tts.txt
+```
+
+Bu komut PyTorch'un CPU sürümünü de kurar (birkaç yüz MB). NVIDIA ekran kartıyla çok daha hızlı çalışması için önce CUDA'lı PyTorch'u kurun, ardından yukarıdaki komutu çalıştırın:
+
+```powershell
+py -3 -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+```
+
+CUDA sürümü (`cu128`) RTX 50 serisi dahil güncel kartlarla uyumludur; farklı bir sürüm gerekirse güncel komutu [pytorch.org](https://pytorch.org/get-started/locally/) sayfasından alın.
+
+Model dosyaları (~34 MB) ilk kullanımda Hugging Face'ten indirilir ve önbellekte tutulur; sonrasında internet gerekmez. Tek dosyalı `.exe` boyutu küçük kalsın diye sesli okumayı içermez.
+
+**Kullanım:**
+
+- Okuyucunun altındaki ▶ düğmesi, ekranda görünen ilk cümleden okumaya başlar. İlk basışta model yüklenir (birkaç saniye ile yarım dakika arası).
+- Okunan cümle vurgulanır ve gerekirse sayfa kendiliğinden kayar. Okuma sürerken bir cümleye tıklamak oradan devam ettirir.
+- ⏮ / ⏭ önceki ve sonraki cümleye geçer, ■ okumayı bitirir; okuma sırasında `Boşluk` tuşu duraklatır/sürdürür.
+- Hız düğmesi 0,8× ile 2× arasında döner; yeni hız bir sonraki cümleden itibaren uygulanır.
+- Bölüm bitince bir sonraki bölüme geçilir ve okuma sürer.
+- **Kaydet**, açık bölümü 48 kHz WAV dosyası olarak kaydeder; ilerleme düğmede görünür.
+- **Ayarlar → Sesli okuma**: model durumu, işlemci (Otomatik / GPU / CPU) ve varsayılan hız.
 
 ## Özel terim sözlüğü
 
@@ -350,6 +381,7 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `bridge.py` | Arayüzden bağımsız uygulama denetleyicisi; arayüzün çağırdığı işlemler ve olaylar |
 | `web/` | Svelte arayüz kaynak kodu (`npm run build` ile `web/dist` oluşur) |
 | `epub_meta.py` | EPUB başlık, yazar ve kapak bilgisi |
+| `tts.py` | Sesli okuma: EMA Lightning modelini arka planda yükleme, cümle sesi ve WAV kaydı |
 | `reader.py` | Okuma sekmesi: kitaplık (`library.json`) ve EPUB bölümlerini güvenli HTML'e dönüştürme |
 | `gui.py` | Eski PySide6 arayüzü (geçiş sürecinde korunuyor) |
 | `app_core.py` | Ayarlar, LM Studio istemcisi, çeviri/analiz/checkpoint çekirdeği |
@@ -362,6 +394,8 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `tests/test_core.py` | Çekirdek, checkpoint ve EPUB testleri |
 | `tests/test_bridge.py` | Arayüz denetleyicisi akış testleri |
 | `tests/test_reader.py` | Okuyucu, HTML temizleme ve kitaplık testleri |
+| `tests/test_tts.py` | Sesli okuma katmanı testleri (sahte modelle) |
+| `requirements-tts.txt` | İsteğe bağlı sesli okuma bağımlılığı |
 
 ## Testler
 

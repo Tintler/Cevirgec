@@ -23,6 +23,7 @@ from app_core import (APP_DIR, DEFAULT_CONFIG, Client, GracefulStop, PauseContro
 from epub_import import prepare
 from epub_meta import book_info
 from reader import Library
+from tts import Speaker
 
 SETTINGS_KEYS = tuple(DEFAULT_CONFIG)
 LOCKED_WHILE_RUNNING = ('base_url', 'model', 'temperature', 'timeout_seconds', 'chunk_chars', 'max_tokens',
@@ -670,6 +671,50 @@ class Bridge:
             return {'error': 'Yalnızca web ve e-posta bağlantıları açılabilir.'}
         webbrowser.open(str(url))
         return True
+
+    # ------------------------------------------------------------------ read aloud
+    def _speaker(self):
+        if getattr(self, '_speaker_cache', None) is None:
+            self._speaker_cache = Speaker(emit=self._emit)
+        return self._speaker_cache
+
+    def tts_status(self):
+        return self._speaker().status()
+
+    def tts_load(self, device=None):
+        device = device or self.ui_prefs().get('tts', {}).get('device', 'auto')
+        return self._speaker().load(device)
+
+    def tts_say(self, text, speed=1.0):
+        try:
+            return self._speaker().say(text, speed)
+        except Exception as error:
+            return _error(error)
+
+    def tts_export(self, title, sentences, speed=1.0):
+        """Asks where to save, then writes the section as one WAV file on a background thread."""
+        speaker = self._speaker()
+        if speaker.state != 'ready':
+            return {'error': 'Ses modeli henüz hazır değil.'}
+        if speaker.status()['exporting']:
+            return {'error': 'Bir kayıt zaten sürüyor.'}
+        name = re.sub(r'[\\/:*?"<>|]+', ' ', str(title or 'bolum')).strip()[:120] or 'bolum'
+        path = self._dialogs.save_file('Sesi kaydet', name + '.wav', ('WAV ses dosyası (*.wav)',)) if self._dialogs else None
+        if not path:
+            return None
+        if not str(path).lower().endswith('.wav'):
+            path = str(path) + '.wav'
+
+        def work():
+            try:
+                count = speaker.export(sentences, speed, path,
+                                       lambda done, total: self._emit('tts_export', {'done': done, 'total': total}))
+                self._emit('tts_export', {'finished': True, 'path': str(path), 'count': count})
+            except Exception as error:
+                self._emit('tts_export', {'finished': True, 'error': str(error)})
+
+        threading.Thread(target=work, name='tts-export', daemon=True).start()
+        return {'started': True, 'path': str(path)}
 
     # ------------------------------------------------------------------ window lifecycle
     def request_close(self, close):

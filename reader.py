@@ -65,6 +65,8 @@ class EpubBook:
             self.opf = next(node.attrib['full-path'] for node in container.iter() if local(node.tag) == 'rootfile')
             package = ET.fromstring(archive.read(self.opf))
             manifest = {node.attrib['id']: node.attrib for node in package.iter() if local(node.tag) == 'item'}
+            self.language = next(((node.text or '').strip().lower() for node in package.iter()
+                                  if local(node.tag) == 'language' and (node.text or '').strip()), '')
             self.media = {}
             for item in manifest.values():
                 try:
@@ -349,6 +351,7 @@ class Library:
             stored['opened'] = datetime.now().isoformat(timespec='seconds')
             self._save(data)
         return {'id': book_id, 'title': entry['title'], 'author': entry['author'], 'toc': book.toc,
+                'language': book.language,
                 'sections': [{'size': section['size'], 'title': book.section_title(number)}
                              for number, section in enumerate(book.sections)],
                 'position': entry.get('position') or {'section': 0, 'offset': 0},

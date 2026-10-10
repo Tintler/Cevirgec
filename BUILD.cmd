@@ -20,6 +20,9 @@ py -3 -m PyInstaller --noconfirm --clean --onefile --windowed ^
   --add-data "assets;assets" ^
   --add-data "web\dist;web\dist" ^
   --exclude-module PySide6 ^
+  --exclude-module ema_lightning ^
+  --exclude-module torch ^
+  --exclude-module numpy ^
   desktop.py
 if errorlevel 1 goto :error
 

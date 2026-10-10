@@ -26,6 +26,7 @@
 - Ayarlanabilir otomatik yeniden deneme ve context/token ön kontrolü
 - Dahili EPUB doğrulaması ve isteğe bağlı EPUBCheck
 - Okuma sekmesi: kendi EPUB kitaplığınız, kaldığı yerden devam, yer imleri, yazı/sayfa ayarları
+- İsteğe bağlı Türkçe sesli okuma ([EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning), çevrimdışı): cümle vurgulama, hız, bölümü WAV olarak kaydetme
 - Windows için tek dosyalı `.exe` derleme komut dosyası
 
 ## Gereksinimler

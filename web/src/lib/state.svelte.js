@@ -16,6 +16,10 @@ export const app = $state({
   library: [],
   reading: { book: null, section: 0, offset: 0, percent: 0 },
   reader: { size: 19, font: 'serif', leading: 1.75, width: 680, paper: 'theme' },
+  // Read aloud: model status from tts.py, export progress and preferences.
+  tts: { state: 'idle', message: '', device: null, exporting: false },
+  ttsExport: null,
+  ttsPrefs: { device: 'auto', speed: 1 },
 });
 
 export const READER_DEFAULTS = { size: 19, font: 'serif', leading: 1.75, width: 680, paper: 'theme' };
@@ -75,7 +79,16 @@ export async function init() {
     }
     for (const message of errors ?? []) toast(message, 'error');
   });
+  on('tts', (status) => (app.tts = status));
+  on('tts_export', (data) => {
+    if (!data.finished) { app.ttsExport = data; return; }
+    app.ttsExport = null;
+    if (data.error) toast('Ses kaydedilemedi: ' + data.error, 'error');
+    else toast(`Ses kaydedildi (${data.count} cümle): ${data.path}`, 'ok');
+  });
   const prefs = await call('ui_prefs');
+  app.ttsPrefs = { device: 'auto', speed: 1, ...(prefs?.tts ?? {}) };
+  app.tts = await call('tts_status');
   setTheme(prefs?.theme ?? 'dark', false);
   app.reader = { ...READER_DEFAULTS, ...(prefs?.reader ?? {}) };
   const books = await call('library_list');
@@ -107,4 +120,8 @@ export async function act(method, ...args) {
 
 export function saveReaderPrefs() {
   call('save_ui_prefs', { reader: $state.snapshot(app.reader) });
+}
+
+export function saveTtsPrefs() {
+  call('save_ui_prefs', { tts: $state.snapshot(app.ttsPrefs) });
 }

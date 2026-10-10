@@ -29,6 +29,12 @@ class Dialogs:
         result = self.window.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=True, file_types=file_types)
         return list(result) if result else None
 
+    def save_file(self, title, filename, file_types):
+        result = self.window.create_file_dialog(webview.FileDialog.SAVE, save_filename=filename, file_types=file_types)
+        if isinstance(result, (list, tuple)):
+            result = result[0] if result else None
+        return result or None
+
     def open_folder(self, title):
         result = self.window.create_file_dialog(webview.FileDialog.FOLDER)
         return result[0] if result else None
