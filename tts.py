@@ -1,8 +1,9 @@
 """Voice engines for read-aloud: discovery, installation and the worker processes.
 
 An engine (EMA Lightning, Piper, …) is a separate program speaking the JSON-lines protocol in
-engines/protocol.py. Installed engines live next to Çevirgeç in `ses-motorlari/<id>/` (worker.exe,
-its runtime, motor.json and a data/ folder for downloaded models and voices). When Çevirgeç runs
+engines/protocol.py. The user builds engine packages (BUILD_TTS.cmd) and installs them from the
+settings page ("Dosyadan kur"); they live next to Çevirgeç in `ses-motorlari/<id>/` (worker.exe,
+its runtime, motor.json and a data/ folder for the models and voices it fetches). When Çevirgeç runs
 from source, an engine whose Python packages are installed is started from engines/<name>/ instead,
 so development needs no packaging. Which engine and voice read a book is chosen per language.
 """
@@ -20,8 +21,6 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 import wave
 import zipfile
 
@@ -168,18 +167,12 @@ class Engines:
         self.state, self.message = 'idle', ''
         self.current = {'engine': None, 'voice': None, 'device': None, 'language': None}
         self._exporting = False
-        self._busy = {}               # engine id -> install/download progress text
+        self._busy = {}               # engine id -> installation progress text
 
     # ------------------------------------------------------------- discovery
     @property
     def install_root(self):
         return self.app_dir / ENGINES_DIR
-
-    def _catalog(self):
-        try:
-            return json.loads((self.source_dir / 'catalog.json').read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            return {'base_url': '', 'engines': {}}
 
     def _manifests(self):
         """Known engines: bundled descriptions (engines/*/motor.json) merged with installed packages."""
@@ -214,11 +207,9 @@ class Engines:
         return self.install_root / engine_id / 'data'
 
     def engines(self):
-        catalog = self._catalog()
         result = []
         for engine_id, manifest in self._manifests().items():
             data = self._data_dir(engine_id)
-            download = catalog.get('engines', {}).get(engine_id)
             voices = [dict(voice, downloaded=all((data / name).exists() for name in voice.get('files', [])))
                       for voice in manifest.get('voices', [])]
             result.append({
@@ -228,8 +219,6 @@ class Engines:
                 'mode': self._mode(manifest), 'removable': bool(manifest.get('dir')), 'speed': bool(manifest.get('speed')),
                 'devices': manifest.get('devices', ['cpu']), 'voices': voices,
                 'languages': sorted({voice['language'] for voice in voices}),
-                'download': ({'url': catalog['base_url'] + download['file'], 'size_mb': download.get('size_mb'),
-                              'version': download.get('version')} if download and catalog.get('base_url') else None),
                 'busy': self._busy.get(engine_id),
             })
         return result
@@ -428,39 +417,6 @@ class Engines:
                 shutil.rmtree(final)
             staging.rename(final)
         self._progress(engine_id, None)
-        return engine_id
-
-    def download(self, engine_id):
-        """Downloads and installs an engine package from the release catalog (blocking)."""
-        item = next((item for item in self.engines() if item['id'] == engine_id), None)
-        if not item or not item['download']:
-            raise ValueError('Bu ses motoru için indirme adresi yok.')
-        self._writable_root()
-        partial = self.install_root / f'.{engine_id}.zip.part'
-        try:
-            self._progress(engine_id, 'İndiriliyor…')
-            request = urllib.request.Request(item['download']['url'], headers={'User-Agent': 'Cevirgec'})
-            try:
-                response = urllib.request.urlopen(request, timeout=60)
-            except urllib.error.HTTPError as error:
-                if error.code == 404:
-                    raise RuntimeError('Paket henüz yayınlanmamış. Elinizde paket dosyası varsa "Dosyadan kur" '
-                                       'ile kurabilirsiniz.') from error
-                raise
-            with response, open(partial, 'wb') as out:
-                total = int(response.headers.get('Content-Length') or 0)
-                done, last = 0, 0.0
-                while chunk := response.read(1 << 20):
-                    out.write(chunk)
-                    done += len(chunk)
-                    if time.monotonic() - last > 0.5:
-                        last = time.monotonic()
-                        self._progress(engine_id, f'İndiriliyor… %{done * 100 // total}' if total
-                                       else f'İndiriliyor… {done >> 20} MB')
-            self.install_zip(partial)
-        finally:
-            partial.unlink(missing_ok=True)
-            self._progress(engine_id, None)
         return engine_id
 
     def remove(self, engine_id):

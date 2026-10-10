@@ -8,7 +8,6 @@ import threading
 import time
 import unittest
 from unittest.mock import patch
-import urllib.error
 import wave
 import zipfile
 
@@ -201,25 +200,6 @@ class EnginesTests(unittest.TestCase):
         self.assertEqual([p.name for p in root.iterdir()], [])            # no half-extracted staging folder
         self.assertIsNone({item['id']: item for item in self.engines.engines()}.get('paket'))
         self.assertEqual(self.engines._busy, {})
-
-    def test_download_installs_and_reports_missing_release(self):
-        (self.root / 'engines' / 'catalog.json').write_text(json.dumps(
-            {'base_url': 'https://example.invalid/', 'engines': {'paket': {'file': 'p.zip', 'size_mb': 1}}}), encoding='utf-8')
-        make_engine(self.root, 'paket', ('tr',), module=False)
-        data = self.package().read_bytes()
-
-        class Response(io.BytesIO):
-            headers = {'Content-Length': str(len(data))}
-
-        with patch('tts.urllib.request.urlopen', return_value=Response(data)):
-            self.assertEqual(self.engines.download('paket'), 'paket')
-        self.assertEqual({item['id']: item for item in self.engines.engines()}['paket']['mode'], 'package')
-        self.assertFalse(list((self.app / 'ses-motorlari').glob('*.part')))
-        missing = urllib.error.HTTPError('u', 404, 'Not Found', {}, None)
-        with patch('tts.urllib.request.urlopen', side_effect=missing):
-            with self.assertRaises(RuntimeError) as caught:
-                self.engines.download('paket')
-        self.assertIn('yayınlanmamış', str(caught.exception))
 
 
 class Dialogs:

@@ -705,9 +705,6 @@ class Bridge:
             return None
         return self._engine_job(lambda: self._engines().install_zip(path), 'kuruldu')
 
-    def tts_download(self, engine_id):
-        return self._engine_job(lambda: self._engines().download(engine_id), 'indirildi ve kuruldu')
-
     def _engine_job(self, job, verb):
         def work():
             try:

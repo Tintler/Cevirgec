@@ -147,30 +147,28 @@ Yeniden çeviri yalnızca seçilen bölümü işler. Tamamlandığında `TAM-CEV
 
 Okuyucu, açık kitabı yerel bir **ses motoruyla** sesli okuyabilir; metin bilgisayardan çıkmaz. Motorlar tak-çıkar biçimdedir ve kitabın diline göre seçilir:
 
-| Motor | Diller | Paket | Not |
-|---|---|---|---|
-| [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) | Türkçe | ~200 MB | Çok doğal Türkçe; model (~34 MB) ilk kullanımda iner. Apache-2.0. |
-| [Piper](https://github.com/OHF-Voice/piper1-gpl) | Türkçe, İngilizce (ve daha fazlası eklenebilir) | ~70 MB | Hafif; her ses (~63 MB) ilk kullanımda iner. |
+| Motor | Diller | Not |
+|---|---|---|
+| [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) | Türkçe | Çok doğal Türkçe; NVIDIA ekran kartında çok hızlı. Model (~34 MB) ilk kullanımda Hugging Face'ten iner. Apache-2.0. |
+| [Piper](https://github.com/OHF-Voice/piper1-gpl) | Türkçe, İngilizce (ve daha fazlası eklenebilir) | Hafif, CPU'da hızlı. Her ses (~63 MB) ilk kullanımda Hugging Face'ten iner. |
 
-### Motor kurulumu
+Motor paketleri yayımlanmaz ve uygulama hiçbir paketi kendisi indirmez: paketleri kendi bilgisayarınızda oluşturup Ayarlar'dan kurarsınız. Model ve ses dosyaları ilk kullanımda kendi resmi kaynaklarından indirilir.
 
-**Dağıtılan sürümde (EXE):** **Ayarlar → Sesli okuma** bölümünde motorun yanındaki **İndir ve kur** düğmesi paketi GitHub Releases'ten indirip programın klasöründeki `ses-motorlari\<motor>\` altına açar. İnternetsiz kurulum için paket zip'i **Dosyadan kur** ile seçilebilir. Bir motoru yeniden kurmak (güncellemek) indirilmiş modelleri ve sesleri korur; **Kaldır** motoru ve indirdiği dosyaları siler.
+### Motor paketlerini oluşturma ve kurma
 
-Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurulamaz; Çevirgeç'i yazılabilir bir klasöre taşıyın. Klasör yolu çok uzunsa (Windows 260 karakter sınırı) EMA modeli indirilemeyebilir; kısa bir yol (ör. `C:\Cevirgec`) kullanın.
+1. Bağımlılıkları kurun. EMA'nın ekran kartıyla çalışması için önce CUDA'lı PyTorch'u kurun (RTX 50 serisi dahil; farklı sürüm gerekirse komutu [pytorch.org](https://pytorch.org/get-started/locally/) sayfasından alın):
 
-**Kaynak koddan çalışırken:** Motorların Python paketleri kuruluysa doğrudan onlar kullanılır, zip gerekmez:
+   ```powershell
+   py -3 -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+   py -3 -m pip install -r requirements-tts.txt
+   ```
 
-```powershell
-py -3 -m pip install -r requirements-tts.txt
-```
+2. Proje klasöründe `BUILD_TTS.cmd` çalıştırın (tek motor için `BUILD_TTS.cmd ema` ya da `BUILD_TTS.cmd piper`). Paketler `dist-engines\cevirgec-ses-<motor>-win64.zip` olarak oluşur. EMA paketi, ortamdaki PyTorch ile paketlenir: CUDA'lı PyTorch ile birkaç GB olur ve ekran kartını kullanır; CUDA'sız PyTorch ile derlenirse yalnızca CPU ile çalışır (betik bu durumda uyarır).
+3. Çevirgeç'te **Ayarlar → Sesli okuma → Dosyadan kur** ile zip'i seçin. Paket programın klasöründe `ses-motorlari\<motor>\` altına açılır. Aynı motoru yeniden kurmak (güncellemek) indirilmiş modelleri ve sesleri korur; **Kaldır** motoru ve dosyalarını siler.
 
-Bu komut PyTorch'un CPU sürümünü de kurar. EMA'nın NVIDIA ekran kartıyla çalışması için önce CUDA'lı PyTorch'u kurun (RTX 50 serisi dahil; farklı sürüm gerekirse komutu [pytorch.org](https://pytorch.org/get-started/locally/) sayfasından alın):
+Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurulamaz; klasör yolu çok uzunsa (Windows 260 karakter sınırı) kurulum anlaşılır bir mesajla reddedilir. Bu durumlarda Çevirgeç'i kısa ve yazılabilir bir klasöre (ör. `C:\Cevirgec`) taşıyın.
 
-```powershell
-py -3 -m pip install torch --index-url https://download.pytorch.org/whl/cu128
-```
-
-Dağıtılan EMA paketi yalnızca CPU içerir; model küçük olduğundan CPU'da da gerçek zamandan çok daha hızlıdır.
+**Kaynak koddan çalışırken** paket gerekmez: `requirements-tts.txt` kuruluysa motorlar doğrudan Python paketlerinden çalışır.
 
 ### Ses seçimi
 
@@ -188,7 +186,7 @@ Dağıtılan EMA paketi yalnızca CPU içerir; model küçük olduğundan CPU'da
 
 ### Yeni ses motoru eklemek (geliştiriciler için)
 
-Her motor `engines/<ad>/` altında bir `worker.py` (bkz. `engines/protocol.py`: `load` ve `say` komutlarını uygulayan bir `Engine` sınıfı) ve onu tanımlayan bir `motor.json`'dan (kimlik, ad, sürüm, `protocol: 1`, Python modülü, gerekli paketler, sesler ve dilleri) oluşur. `BUILD_TTS.cmd` her motoru `dist-engines\cevirgec-ses-<id>-win64.zip` olarak paketler; indirme adresleri `engines/catalog.json` dosyasındadır.
+Her motor `engines/<ad>/` altında bir `worker.py` (bkz. `engines/protocol.py`: `load` ve `say` komutlarını uygulayan bir `Engine` sınıfı) ve onu tanımlayan bir `motor.json`'dan (kimlik, ad, sürüm, `protocol: 1`, Python modülü, gerekli paketler, sesler ve dilleri) oluşur. `BUILD_TTS.cmd` her motoru `dist-engines\cevirgec-ses-<id>-win64.zip` olarak paketler; özel PyInstaller seçenekleri `build_engines.py` içindeki `OPTIONS` sözlüğündedir.
 
 ## Özel terim sözlüğü
 
@@ -398,8 +396,8 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `bridge.py` | Arayüzden bağımsız uygulama denetleyicisi; arayüzün çağırdığı işlemler ve olaylar |
 | `web/` | Svelte arayüz kaynak kodu (`npm run build` ile `web/dist` oluşur) |
 | `epub_meta.py` | EPUB başlık, yazar ve kapak bilgisi |
-| `tts.py` | Ses motorları: bulma, dil başına seçim, motor süreçleri, zip/indirme ile kurulum, WAV kaydı |
-| `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA ve Piper işçileri, `motor.json` tanımları, `catalog.json` |
+| `tts.py` | Ses motorları: bulma, dil başına seçim, motor süreçleri, zip'ten kurulum, WAV kaydı |
+| `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA ve Piper işçileri, `motor.json` tanımları |
 | `build_engines.py`, `BUILD_TTS.cmd` | Ses motoru paketlerini derleme |
 | `reader.py` | Okuma sekmesi: kitaplık (`library.json`) ve EPUB bölümlerini güvenli HTML'e dönüştürme |
 | `gui.py` | Eski PySide6 arayüzü (geçiş sürecinde korunuyor) |

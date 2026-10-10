@@ -3,9 +3,9 @@
     py -3 build_engines.py            all engines
     py -3 build_engines.py piper      one engine (folder name under engines/)
 
-Output: dist-engines/cevirgec-ses-<id>-win64.zip, one folder <id>/ inside, as expected by
-"Dosyadan kur" and by engines/catalog.json. Upload the zips to the GitHub release named in the
-catalog's base_url (tag ses-motorlari-v1).
+Output: dist-engines/cevirgec-ses-<id>-win64.zip with one folder <id>/ inside, to be installed in
+Çevirgeç with Ayarlar → Sesli okuma → "Dosyadan kur". Packages are built locally and not published:
+EMA is packaged with whatever PyTorch is installed (CUDA PyTorch gives a GPU-capable, multi-GB package).
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def build(folder):
     bundle_licenses(output)
     DIST.mkdir(exist_ok=True)
     archive_path = DIST / f'cevirgec-ses-{engine_id}-win64.zip'
-    with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+    with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
         for path in sorted(output.rglob('*')):
             if path.is_file():
                 archive.write(path, f'{engine_id}/{path.relative_to(output).as_posix()}')
@@ -86,13 +86,11 @@ def cuda_torch():
 
 
 def main():
-    allow_cuda = '--cuda' in sys.argv
-    wanted = set(sys.argv[1:]) - {'--cuda'}
-    if (not wanted or 'ema' in wanted) and not allow_cuda and cuda_torch():
-        sys.exit('Bu Python ortamında CUDA\'lı PyTorch kurulu; EMA paketi birkaç GB olur ve GitHub\'ın 2 GB dosya '
-                 'sınırını aşar. Paketi CPU PyTorch kurulu ayrı bir ortamda derleyin '
-                 '(py -3 -m venv .venv-tts, ardından pip install torch --index-url '
-                 'https://download.pytorch.org/whl/cpu ve -r requirements-tts.txt) ya da bilerek istiyorsanız --cuda ekleyin.')
+    wanted = set(sys.argv[1:])
+    if (not wanted or 'ema' in wanted) and not cuda_torch():
+        print('UYARI: Bu Python ortamındaki PyTorch CUDA desteklemiyor; EMA paketi yalnızca CPU ile çalışır. '
+              "GPU için önce CUDA'lı PyTorch kurun: py -3 -m pip install torch --index-url "
+              'https://download.pytorch.org/whl/cu128', flush=True)
     folders = [path.parent for path in sorted((ROOT / 'engines').glob('*/motor.json'))
                if not wanted or path.parent.name in wanted]
     if not folders:

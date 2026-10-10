@@ -37,10 +37,6 @@
     saveTtsPrefs();
   }
 
-  async function install(engine) {
-    await act('tts_download', engine.id);
-  }
-
   async function installFile() {
     await act('tts_install_file');
   }
@@ -74,8 +70,12 @@
 <div class="card">
   <div class="head">
     <h3>Sesli okuma</h3>
-    <button class="btn sm" onclick={installFile} title="Elinizdeki bir ses motoru paketini (.zip) kurun"><Icon name="download" size={14} />Dosyadan kur</button>
+    <button class="btn sm primary" onclick={installFile} title="BUILD_TTS.cmd ile oluşturduğunuz ses motoru paketini (.zip) kurun"><Icon name="download" size={14} />Dosyadan kur</button>
   </div>
+  {#if !app.engines.some((e) => e.mode)}
+    <div class="info"><span>Kurulu ses motoru yok. Paketleri proje klasöründe <b>BUILD_TTS.cmd</b> ile oluşturun
+      (<code>dist-engines</code> klasörüne yazılır), sonra <b>Dosyadan kur</b> ile seçin.</span></div>
+  {/if}
 
   {#each app.engines as engine (engine.id)}
     {@const badge = modeBadge(engine)}
@@ -86,9 +86,6 @@
         <small class="dim">Diller: {engine.languages.map((l) => ({ tr: 'Türkçe', en: 'İngilizce' })[l] ?? l).join(', ')} · {engine.license}</small>
       </div>
       <span class="badge {badge[1]}">{badge[0]}</span>
-      {#if !engine.mode && engine.download && !engine.busy}
-        <button class="btn sm primary" onclick={() => install(engine)}>İndir ve kur{engine.download.size_mb ? ` (~${engine.download.size_mb} MB)` : ''}</button>
-      {/if}
       {#if engine.removable && !engine.busy}
         <button class="icon-btn" title="Kaldır" onclick={() => remove(engine)}><Icon name="trash" size={16} /></button>
       {/if}
@@ -141,6 +138,7 @@
   .l { flex: 1; min-width: 0; }
   .l small { display: block; color: var(--secondary); font-size: 12px; }
   .l small.dim { color: var(--dim); }
+  .info code { font-family: var(--mono); }
   .ver { color: var(--dim); font-size: 12px; margin-left: 4px; }
   .field.w { width: 320px; }
   .info, .warn { display: flex; gap: 8px; align-items: center; font-size: 12px; padding: 8px 12px; border-radius: 8px; margin: 4px 0 8px; }
