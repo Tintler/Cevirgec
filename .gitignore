@@ -31,3 +31,8 @@ web/dist/
 ui.json
 library.json
 .claude/
+
+# Ses motoru paketleri (BUILD_TTS.cmd) ve kurulu motorlar
+build-engines/
+dist-engines/
+ses-motorlari/

@@ -31,6 +31,8 @@ PLAY_RATE = 24000      # requested for playback (engines that cannot choose retu
 EXPORT_RATE = 48000    # requested for saved files
 SENTENCE_GAP = 0.35    # seconds of silence between sentences in an exported file
 DEFAULT_ENGINE = {'tr': 'ema-lightning'}
+MAX_PATH = 259
+DATA_PATH_BUDGET = 70   # room for downloaded models/voices under <engine>/data
 FROZEN = bool(getattr(sys, 'frozen', False))
 
 
@@ -142,6 +144,15 @@ class Worker:
                 pass
         if self.alive:
             self.process.kill()
+            try:
+                self.process.wait(3)
+            except subprocess.TimeoutExpired:
+                pass
+        for pipe in (self.process.stdin, self.process.stdout):
+            try:
+                pipe.close()
+            except OSError:
+                pass
 
 
 class Engines:
@@ -381,22 +392,32 @@ class Engines:
             prefix = '' if prefix == '.' else prefix + '/'
             if prefix + manifest.get('entry', 'worker.exe') not in names:
                 raise ValueError('Pakette motor programı eksik.')
-            staging = self.install_root / f'.{engine_id}.kuruluyor'
-            shutil.rmtree(staging, ignore_errors=True)
-            staging.mkdir(parents=True)
-            base = staging.resolve()
             members = [name for name in names if name.startswith(prefix)]
-            for index, name in enumerate(members):
-                target = (staging / name[len(prefix):]).resolve()
-                if base not in target.parents:
-                    shutil.rmtree(staging, ignore_errors=True)
-                    raise ValueError('Paket güvenli olmayan bir dosya yolu içeriyor.')
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(name) as source, open(target, 'wb') as out:
-                    shutil.copyfileobj(source, out)
-                if index % 200 == 0:
-                    self._progress(engine_id, f'Açılıyor… %{index * 100 // max(1, len(members))}')
-        final = self.install_root / engine_id
+            final = self.install_root / engine_id
+            longest = max(len(str(final / name[len(prefix):])) for name in members)
+            longest = max(longest, len(str(final / 'data')) + DATA_PATH_BUDGET)
+            if longest > MAX_PATH:
+                raise RuntimeError(f'Program klasörünün yolu bu motor için çok uzun ({len(str(self.app_dir))} karakter). '
+                                   "Windows'un dosya yolu sınırı nedeniyle kurulamaz; Çevirgeç'i daha kısa yollu bir "
+                                   'klasöre (örneğin C:\\Cevirgec) taşıyın.')
+            staging = self.install_root / f'.{engine_id}.kur'
+            shutil.rmtree(staging, ignore_errors=True)
+            try:
+                staging.mkdir(parents=True)
+                base = staging.resolve()
+                for index, name in enumerate(members):
+                    target = (staging / name[len(prefix):]).resolve()
+                    if base not in target.parents:
+                        raise ValueError('Paket güvenli olmayan bir dosya yolu içeriyor.')
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(name) as source, open(target, 'wb') as out:
+                        shutil.copyfileobj(source, out)
+                    if index % 200 == 0:
+                        self._progress(engine_id, f'Açılıyor… %{index * 100 // max(1, len(members))}')
+            except BaseException:
+                shutil.rmtree(staging, ignore_errors=True)
+                self._progress(engine_id, None)
+                raise
         with self._lock:
             if self._worker and self._worker.engine['id'] == engine_id:
                 self.stop_worker()

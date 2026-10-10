@@ -145,33 +145,50 @@ Yeniden çeviri yalnızca seçilen bölümü işler. Tamamlandığında `TAM-CEV
 
 ## Sesli okuma
 
-Okuyucu, açık kitabı [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) ile Türkçe sesli okuyabilir. Model yereldir; metin bilgisayardan çıkmaz. Yalnızca Türkçe okur; dili Türkçe olmayan kitaplarda uyarı verilir.
+Okuyucu, açık kitabı yerel bir **ses motoruyla** sesli okuyabilir; metin bilgisayardan çıkmaz. Motorlar tak-çıkar biçimdedir ve kitabın diline göre seçilir:
 
-**Kurulum (isteğe bağlı, kaynak koddan çalıştırırken):**
+| Motor | Diller | Paket | Not |
+|---|---|---|---|
+| [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) | Türkçe | ~200 MB | Çok doğal Türkçe; model (~34 MB) ilk kullanımda iner. Apache-2.0. |
+| [Piper](https://github.com/OHF-Voice/piper1-gpl) | Türkçe, İngilizce (ve daha fazlası eklenebilir) | ~70 MB | Hafif; her ses (~63 MB) ilk kullanımda iner. |
+
+### Motor kurulumu
+
+**Dağıtılan sürümde (EXE):** **Ayarlar → Sesli okuma** bölümünde motorun yanındaki **İndir ve kur** düğmesi paketi GitHub Releases'ten indirip programın klasöründeki `ses-motorlari\<motor>\` altına açar. İnternetsiz kurulum için paket zip'i **Dosyadan kur** ile seçilebilir. Bir motoru yeniden kurmak (güncellemek) indirilmiş modelleri ve sesleri korur; **Kaldır** motoru ve indirdiği dosyaları siler.
+
+Program `C:\Program Files` gibi yazma izni olmayan bir klasördeyse motor kurulamaz; Çevirgeç'i yazılabilir bir klasöre taşıyın. Klasör yolu çok uzunsa (Windows 260 karakter sınırı) EMA modeli indirilemeyebilir; kısa bir yol (ör. `C:\Cevirgec`) kullanın.
+
+**Kaynak koddan çalışırken:** Motorların Python paketleri kuruluysa doğrudan onlar kullanılır, zip gerekmez:
 
 ```powershell
 py -3 -m pip install -r requirements-tts.txt
 ```
 
-Bu komut PyTorch'un CPU sürümünü de kurar (birkaç yüz MB). NVIDIA ekran kartıyla çok daha hızlı çalışması için önce CUDA'lı PyTorch'u kurun, ardından yukarıdaki komutu çalıştırın:
+Bu komut PyTorch'un CPU sürümünü de kurar. EMA'nın NVIDIA ekran kartıyla çalışması için önce CUDA'lı PyTorch'u kurun (RTX 50 serisi dahil; farklı sürüm gerekirse komutu [pytorch.org](https://pytorch.org/get-started/locally/) sayfasından alın):
 
 ```powershell
 py -3 -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
 
-CUDA sürümü (`cu128`) RTX 50 serisi dahil güncel kartlarla uyumludur; farklı bir sürüm gerekirse güncel komutu [pytorch.org](https://pytorch.org/get-started/locally/) sayfasından alın.
+Dağıtılan EMA paketi yalnızca CPU içerir; model küçük olduğundan CPU'da da gerçek zamandan çok daha hızlıdır.
 
-Model dosyaları (~34 MB) ilk kullanımda Hugging Face'ten indirilir ve önbellekte tutulur; sonrasında internet gerekmez. Tek dosyalı `.exe` boyutu küçük kalsın diye sesli okumayı içermez.
+### Ses seçimi
 
-**Kullanım:**
+**Ayarlar → Sesli okuma**'da her dil için hangi motor ve sesin okuyacağı seçilir (ör. Türkçe kitaplar → EMA Lightning, İngilizce kitaplar → Piper · Lessac). Seçim yapılmazsa Türkçe için EMA, diğer diller için o dili destekleyen ilk motor kullanılır. Kitabın dili EPUB'daki `dc:language` bilgisinden alınır; bilgi yoksa Türkçe varsayılır. Kurulu motorlarda o dil yoksa okuyucu bunu söyler ve Ayarlar'a yönlendirir.
 
-- Okuyucunun altındaki ▶ düğmesi, ekranda görünen ilk cümleden okumaya başlar. İlk basışta model yüklenir (birkaç saniye ile yarım dakika arası).
+### Kullanım
+
+- Okuyucunun altındaki ▶ düğmesi, ekranda görünen ilk cümleden okumaya başlar. İlk basışta motor başlatılır ve gerekirse model/ses indirilir; aşamalar oynatıcıda ve Ayarlar'da görünür.
 - Okunan cümle vurgulanır ve gerekirse sayfa kendiliğinden kayar. Okuma sürerken bir cümleye tıklamak oradan devam ettirir.
 - ⏮ / ⏭ önceki ve sonraki cümleye geçer, ■ okumayı bitirir; okuma sırasında `Boşluk` tuşu duraklatır/sürdürür.
 - Hız düğmesi 0,8× ile 2× arasında döner; yeni hız bir sonraki cümleden itibaren uygulanır.
 - Bölüm bitince bir sonraki bölüme geçilir ve okuma sürer.
-- **Kaydet**, açık bölümü 48 kHz WAV dosyası olarak kaydeder; ilerleme düğmede görünür.
-- **Ayarlar → Sesli okuma**: model durumu, işlemci (Otomatik / GPU / CPU) ve varsayılan hız.
+- **Kaydet**, açık bölümü WAV dosyası olarak kaydeder (EMA 48 kHz, Piper sesin kendi örnekleme hızında); ilerleme düğmede görünür.
+- Bir motor çökerse okuma durur ve hata ayrıntısı gösterilir; motorun günlüğü `ses-motorlari\<motor>\worker.log` dosyasındadır. Okumayı yeniden başlatmak motoru da yeniden başlatır.
+
+### Yeni ses motoru eklemek (geliştiriciler için)
+
+Her motor `engines/<ad>/` altında bir `worker.py` (bkz. `engines/protocol.py`: `load` ve `say` komutlarını uygulayan bir `Engine` sınıfı) ve onu tanımlayan bir `motor.json`'dan (kimlik, ad, sürüm, `protocol: 1`, Python modülü, gerekli paketler, sesler ve dilleri) oluşur. `BUILD_TTS.cmd` her motoru `dist-engines\cevirgec-ses-<id>-win64.zip` olarak paketler; indirme adresleri `engines/catalog.json` dosyasındadır.
 
 ## Özel terim sözlüğü
 
@@ -381,7 +398,9 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `bridge.py` | Arayüzden bağımsız uygulama denetleyicisi; arayüzün çağırdığı işlemler ve olaylar |
 | `web/` | Svelte arayüz kaynak kodu (`npm run build` ile `web/dist` oluşur) |
 | `epub_meta.py` | EPUB başlık, yazar ve kapak bilgisi |
-| `tts.py` | Sesli okuma: EMA Lightning modelini arka planda yükleme, cümle sesi ve WAV kaydı |
+| `tts.py` | Ses motorları: bulma, dil başına seçim, motor süreçleri, zip/indirme ile kurulum, WAV kaydı |
+| `engines/` | Ses motorları: ortak protokol (`protocol.py`), EMA ve Piper işçileri, `motor.json` tanımları, `catalog.json` |
+| `build_engines.py`, `BUILD_TTS.cmd` | Ses motoru paketlerini derleme |
 | `reader.py` | Okuma sekmesi: kitaplık (`library.json`) ve EPUB bölümlerini güvenli HTML'e dönüştürme |
 | `gui.py` | Eski PySide6 arayüzü (geçiş sürecinde korunuyor) |
 | `app_core.py` | Ayarlar, LM Studio istemcisi, çeviri/analiz/checkpoint çekirdeği |
@@ -394,8 +413,8 @@ PyInstaller tek dosyalı EXE ilk açılışta geçici klasöre açıldığı iç
 | `tests/test_core.py` | Çekirdek, checkpoint ve EPUB testleri |
 | `tests/test_bridge.py` | Arayüz denetleyicisi akış testleri |
 | `tests/test_reader.py` | Okuyucu, HTML temizleme ve kitaplık testleri |
-| `tests/test_tts.py` | Sesli okuma katmanı testleri (sahte modelle) |
-| `requirements-tts.txt` | İsteğe bağlı sesli okuma bağımlılığı |
+| `tests/test_tts.py` | Ses motoru yöneticisi testleri (sahte motor gerçek alt süreç olarak) |
+| `requirements-tts.txt` | Kaynak koddan sesli okuma ve motor derleme bağımlılıkları |
 
 ## Testler
 

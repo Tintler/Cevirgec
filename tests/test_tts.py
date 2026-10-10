@@ -188,6 +188,20 @@ class EnginesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.engines.remove('paket')
 
+    def test_install_refuses_too_long_paths_and_cleans_up_failures(self):
+        with patch('tts.MAX_PATH', 40):
+            with self.assertRaises(RuntimeError) as caught:
+                self.engines.install_zip(self.package())
+        self.assertIn('çok uzun', str(caught.exception))
+        self.assertFalse((self.app / 'ses-motorlari' / 'paket').exists())
+        with patch('tts.shutil.copyfileobj', side_effect=OSError('disk dolu')):
+            with self.assertRaises(OSError):
+                self.engines.install_zip(self.package())
+        root = self.app / 'ses-motorlari'
+        self.assertEqual([p.name for p in root.iterdir()], [])            # no half-extracted staging folder
+        self.assertIsNone({item['id']: item for item in self.engines.engines()}.get('paket'))
+        self.assertEqual(self.engines._busy, {})
+
     def test_download_installs_and_reports_missing_release(self):
         (self.root / 'engines' / 'catalog.json').write_text(json.dumps(
             {'base_url': 'https://example.invalid/', 'engines': {'paket': {'file': 'p.zip', 'size_mb': 1}}}), encoding='utf-8')

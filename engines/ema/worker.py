@@ -14,6 +14,16 @@ BATCH_SIZE = 4          # sentences synthesised together at most (current + pref
 RATES = (48000, 24000, 16000, 8000)
 
 
+def _flat_download(repo, filename, **_kwargs):
+    """Model files straight into data/model/ (short paths) instead of the deeply nested Hub cache."""
+    from huggingface_hub import hf_hub_download
+    folder = os.path.join(data_dir(), 'model')
+    path = os.path.join(folder, filename)
+    if not os.path.exists(path):
+        hf_hub_download(repo, filename, local_dir=folder)
+    return path
+
+
 class EmaEngine(Engine):
     def __init__(self):
         super().__init__()
@@ -23,17 +33,27 @@ class EmaEngine(Engine):
         if self.model is not None:
             return {'device': str(self.model.device), 'voice': 'default'}
         os.environ.setdefault('HF_HUB_DISABLE_SYMLINKS_WARNING', '1')
-        if getattr(sys, 'frozen', False) and 'HF_HOME' not in os.environ:
-            # Packaged engine: keep the downloaded model next to the program, not in the user profile.
-            os.environ['HF_HOME'] = os.path.join(data_dir(), 'huggingface')
+        packaged = getattr(sys, 'frozen', False)
+        if packaged and 'HF_HOME' not in os.environ:
+            # Packaged engine: keep downloads next to the program, not in the user profile.
+            os.environ['HF_HOME'] = os.path.join(data_dir(), 'hf')
         self.stage('PyTorch yükleniyor…')
         import torch
+        import ema_lightning.api
         from ema_lightning import EMA
+        if packaged:
+            ema_lightning.api.hf_hub_download = _flat_download
         if device == 'cuda' and not torch.cuda.is_available():
             raise RuntimeError('NVIDIA ekran kartı (CUDA) bulunamadı. "Otomatik" veya "CPU" seçin '
                                'ya da PyTorch\'un CUDA sürümünü kurun.')
         self.stage('Model dosyaları alınıyor ve yükleniyor…')
-        model = EMA(device=device if device in ('cpu', 'cuda') else 'auto')
+        try:
+            model = EMA(device=device if device in ('cpu', 'cuda') else 'auto')
+        except OSError as error:
+            if getattr(error, 'winerror', None) == 206:
+                raise RuntimeError("Klasör yolu Windows için çok uzun. Çevirgeç'i daha kısa yollu bir klasöre "
+                                   '(örneğin C:\\Cevirgec) taşıyın.') from error
+            raise
         # lightning() (torch.compile + CUDA graphs for every shape) is skipped on purpose: it can take minutes
         # or stall on Windows, and the plain path is already far faster than real time. A fixed small batch
         # also skips the throughput benchmark.

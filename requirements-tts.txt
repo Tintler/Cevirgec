@@ -1,3 +1,5 @@
-# Sesli okuma (istege bagli). PyTorch kurar; NVIDIA ekran karti icin once CUDA surumlu PyTorch kurun:
+# Sesli okuma motorlari (istege bagli; kaynak koddan calisirken ve BUILD_TTS.cmd icin).
+# EMA Lightning PyTorch kurar. NVIDIA ekran karti icin once CUDA surumlu PyTorch kurun:
 #   py -3 -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 ema-lightning==1.1.0
+piper-tts==1.8.0
