@@ -1911,6 +1911,13 @@ class ReviewFixTests(unittest.TestCase):
                 work_file = book / '_python_translation' / path.name / 'translation-draft.md'
                 self.assertLessEqual(len(str(work_file)), 250)
 
+    def test_crossed_inline_markup_still_yields_valid_xhtml(self):
+        for text in ('for ^*^that^*^ *Book*', '**bold *both** italic*', 'a ^b *c^ d* e'):
+            fragment = inline_markup(text, {})
+            ET.fromstring('<p>' + fragment + '</p>')
+        self.assertEqual(inline_markup('for ^*^that^*^ *Book*', {}), 'for <sup>*</sup>that<sup>*</sup> *Book*')
+        self.assertEqual(inline_markup('*a* and ^1^', {}), '<em>a</em> and <sup>1</sup>')
+
     def test_optional_epubcheck_jar_command(self):
         with tempfile.TemporaryDirectory() as temp:
             jar = Path(temp) / 'epubcheck.jar'; jar.write_bytes(b'jar')

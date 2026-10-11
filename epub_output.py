@@ -113,11 +113,23 @@ def inline_markup(text, asset_map, link_map=None, current_href=''):
     for start, end, value in sorted(replacements, reverse=True):
         text = text[:start] + value + text[end:]
     escaped = html.escape(text, quote=False)
-    escaped = re.sub(r'\^([^\^\s][^\^\n]{0,20}?)\^', r'<sup>\1</sup>', escaped)
-    escaped = _emphasis(escaped)
-    for key, replacement in placeholders.items():
-        escaped = escaped.replace(key, replacement)
-    return escaped
+
+    def superscript(value):
+        return re.sub(r'\^([^\^\s][^\^\n]{0,20}?)\^', r'<sup>\1</sup>', value)
+
+    # Kaynakta ya da model cevirisinde capraz isaretleme (``^*^metin^*^``,
+    # ``**a *b** c*``) gecersiz XHTML uretip tum kitabin ciktisini durdurmasin:
+    # gecerli olana kadar daha sade bicimler denenir.
+    for render in (lambda v: _emphasis(superscript(v)), superscript, _emphasis, lambda v: v):
+        candidate = render(escaped)
+        for key, replacement in placeholders.items():
+            candidate = candidate.replace(key, replacement)
+        try:
+            ET.fromstring('<x>' + candidate + '</x>')
+        except ET.ParseError:
+            continue
+        return candidate
+    return candidate
 
 
 def without_first_heading(markdown):
