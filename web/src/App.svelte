@@ -5,11 +5,14 @@
   import Settings from './views/Settings.svelte';
   import ReviewModal from './components/ReviewModal.svelte';
   import ConfirmHost from './components/ConfirmHost.svelte';
+  import TitleBar from './components/TitleBar.svelte';
   import { app, init, toasts, setTheme, dismissToast } from './lib/state.svelte.js';
   import { call } from './lib/api.js';
+  import { frame, initFrame, dragArea } from './lib/frame.svelte.js';
   import logo from '../../assets/app.svg';
 
   init();
+  initFrame();
 
   const nav = [
     ['translate', 'Çeviri', 'languages'],
@@ -45,7 +48,7 @@
 
 <div class="shell">
   <aside class="side">
-    <div class="brand"><img src={logo} alt="" /><span>Çevirgeç</span></div>
+    <div class="brand" use:dragArea><img src={logo} alt="" /><span>Çevirgeç</span></div>
     {#each nav as [key, label, icon]}
       <button class="nav" class:on={app.view === key} onclick={() => (app.view = key)}><Icon name={icon} /><span>{label}</span></button>
     {/each}
@@ -64,10 +67,13 @@
     </div>
   </aside>
 
-  <main>
-    {#if app.view === 'translate'}<Translate />
-    {:else if app.view === 'reading'}<Reading />
-    {:else}<Settings />{/if}
+  <main class:framed={frame.custom}>
+    <TitleBar />
+    <div class="view">
+      {#if app.view === 'translate'}<Translate />
+      {:else if app.view === 'reading'}<Reading />
+      {:else}<Settings />{/if}
+    </div>
   </main>
 </div>
 
@@ -103,7 +109,10 @@
   .dot.bad { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent); }
   .lm .m { color: var(--secondary); margin-top: 6px; word-break: break-all; }
   .lm .c { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  main { min-width: 0; min-height: 0; height: 100%; }
+  main { min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; }
+  .view { flex: 1; min-height: 0; }
+  /* The title bar strip above already gives the page headers their top space. */
+  main.framed :global(.screen) { padding-top: 2px; }
 
   .dropzone { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, .6); display: grid; place-items: center; pointer-events: none; }
   .dropzone div { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 40px 56px; border: 2px dashed var(--accent);

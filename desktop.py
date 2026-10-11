@@ -13,6 +13,7 @@ from webview.dom import DOMEventHandler
 
 from app_core import ROOT
 from bridge import Bridge
+from window_frame import WindowFrame, frameless
 
 DEV_URL = 'http://localhost:5173'
 
@@ -62,8 +63,11 @@ def main():
         screen = webview.screens[0]
         width, height = min(width, int(screen.width * 0.92)), min(height, int(screen.height * 0.88))
     window = webview.create_window('Çevirgeç', DEV_URL if dev else str(index), js_api=bridge,
-                                   width=width, height=height, min_size=(980, 640), background_color='#09090b')
+                                   width=width, height=height, min_size=(980, 640), background_color='#09090b',
+                                   frameless=frameless(), easy_drag=False)
     state['window'] = dialogs.window = window
+    if frameless():
+        bridge._frame = WindowFrame(window, emit)
 
     def close_later():
         state['closing_ok'] = True

@@ -60,6 +60,9 @@ class Bridge:
     def __init__(self, emit=None, dialogs=None):
         self._emit = emit or (lambda _event, _data: None)
         self._dialogs = dialogs          # object with open_file(), open_folder(); set by desktop.py
+        # window_frame.WindowFrame, set by desktop.py. Private on purpose: pywebview hands every public
+        # attribute of the js_api object to the page and walks into it.
+        self._frame = None
         self._lock = threading.RLock()
         self._book = None
         self._epub = None
@@ -796,6 +799,21 @@ class Bridge:
             cached.shutdown()
 
     # ------------------------------------------------------------------ window lifecycle
+    def window_state(self):
+        return self._frame.state() if self._frame else {'custom': False, 'maximized': False}
+
+    def window_command(self, name, edge=None):
+        """Title bar buttons, moving and resizing of the frameless window."""
+        if self._frame is None:
+            return False
+        if name == 'resize':
+            self._frame.resize(edge)
+        elif name in ('minimize', 'toggle_maximize', 'close', 'drag'):
+            getattr(self._frame, name)()
+        else:
+            return False
+        return True
+
     def request_close(self, close):
         """Called when the window is closing. Returns True when it may close now."""
         with self._lock:
