@@ -347,71 +347,118 @@ def validate_translation_structure(source, translated):
         raise ValueError('Yapisal EPUB isaretleri korunmadi: ' + ' | '.join(problems))
 
 
-def restore_missing_epub_anchors(source, translated):
-    """Modelin dusurdugu bagimsiz EPUB capa bloklarini kaynak konumuna koyar.
+ANCHOR_TOKEN = re.compile(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]')
 
-    EPUB importer, blok duzeyindeki ``id``/``name`` hedeflerini kendi Markdown
-    paragrafinda tasir. Capa gorunur metin olmadigi icin bu bloklar modele hic
-    gonderilmez (``model_source``) ve burada geri eklenir. Gorunur blok sayilari
-    esitse capa ayni paragrafin onune, model paragraf birlestirip boldugunde
-    ayni parca icinde orantili konuma konur. Degismis/fazladan capa ya da metin
-    icine gomulu capa otomatik duzeltilmez; normal yapisal dogrulama bunlari
-    reddeder.
+
+def structural_tokens(text):
+    """Metindeki EPUB capa ve gorsel isaretleri: (anahtar, metin parcasi)."""
+    found = [(start, ('gorsel', target), text[start:end]) for start, end, _alt, target
+             in markdown_spans(text, image_only=True) if target.startswith('epub-resource:')]
+    found += [(match.start(), ('capa', match.group(1)), match.group(0)) for match in ANCHOR_TOKEN.finditer(text)]
+    return [(key, snippet) for _start, key, snippet in sorted(found)]
+
+
+def structural_only(block):
+    """Gorunur metni olmayan, yalnizca capa/gorsel tasiyan blok mu?"""
+    tokens = structural_tokens(block)
+    rest = block
+    for _key, snippet in tokens:
+        rest = rest.replace(snippet, '', 1)
+    return bool(tokens) and not rest.strip()
+
+
+def text_blocks(text):
+    """Bos satirla ayrilmis bloklar: (baslangic, bitis, metin)."""
+    result = []
+    start = 0
+    for match in re.finditer(r'\n[ \t]*\n+', text):
+        if text[start:match.start()].strip():
+            result.append((start, match.start(), text[start:match.start()]))
+        start = match.end()
+    if text[start:].strip():
+        result.append((start, len(text), text[start:]))
+    return result
+
+
+def restore_missing_footnote_refs(source, translated):
+    """Modelin dusurdugu sayi etiketli dipnot baglantisini paragraf sonuna koyar.
+
+    ``[109](epub-link:...)`` gibi bir dipnot isareti ceviride tamamen
+    kaybolursa, kaynak ve ceviri gorunur paragraf sayilari esitken ayni
+    paragrafin sonuna eklenir. Cumle icindeki tam konum bilinmez; dipnot ve geri
+    donus baglantisi ise korunur.
     """
-    anchor_pattern = re.compile(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]')
-    source_anchors = Counter(anchor_pattern.findall(source))
-    translated_anchors = Counter(anchor_pattern.findall(translated))
-    missing = source_anchors - translated_anchors
-    if not missing or translated_anchors - source_anchors:
+    missing = protected_epub_tokens(source)['ic baglanti'] - protected_epub_tokens(translated)['ic baglanti']
+    if not missing:
+        return translated, 0
+    source_visible = [item for item in text_blocks(source) if not structural_only(item[2])]
+    translated_visible = [item for item in text_blocks(translated) if not structural_only(item[2])]
+    if len(source_visible) != len(translated_visible):
+        return translated, 0
+    insertions = []
+    for index, (_start, _end, block) in enumerate(source_visible):
+        for start, end, label, target in markdown_spans(block):
+            if missing[target] <= 0 or not re.fullmatch(r'\^?\d{1,4}\^?', label.strip('*')):
+                continue
+            if target in translated_visible[index][2]:
+                continue  # bozuk bicimde duruyor; onarim baska adimin isi
+            if block[end:end + 1] == '^' and block[start - 1:start] == '^':
+                start, end = start - 1, end + 1
+            insertions.append((translated_visible[index][0] + len(translated_visible[index][2].rstrip()), block[start:end]))
+            missing[target] -= 1
+    for position, snippet in sorted(insertions, reverse=True):
+        translated = translated[:position] + snippet + translated[position:]
+    return translated, len(insertions)
+
+
+def restore_missing_epub_anchors(source, translated):
+    """Modelin gormedigi/dusurdugu capa ve gorsel bloklarini kaynak konumuna koyar.
+
+    EPUB importer, blok duzeyindeki ``id``/``name`` hedeflerini ve tek basina
+    duran gorselleri kendi Markdown paragrafinda tasir. Bunlarda cevrilecek
+    metin olmadigi icin modele hic gonderilmez (``model_source``) ve burada geri
+    eklenir. Gorunur blok sayilari esitse blok ayni paragrafin onune, model
+    paragraf birlestirip boldugunde ayni parca icinde orantili konuma konur.
+    Degismis/fazladan isaret ya da metin icine gomulu isaret otomatik
+    duzeltilmez; normal yapisal dogrulama bunlari reddeder.
+    """
+    source_keys = Counter(key for key, _snippet in structural_tokens(source))
+    translated_keys = Counter(key for key, _snippet in structural_tokens(translated))
+    missing = source_keys - translated_keys
+    if not missing or translated_keys - source_keys:
         return translated, 0
 
-    separator = re.compile(r'\n[ \t]*\n+')
-
-    def blocks(text):
-        result = []
-        start = 0
-        for match in separator.finditer(text):
-            if text[start:match.start()].strip():
-                result.append((start, match.start(), text[start:match.start()]))
-            start = match.end()
-        if text[start:].strip():
-            result.append((start, len(text), text[start:]))
-        return result
-
-    def anchor_only(block):
-        without = anchor_pattern.sub('', block)
-        return not without.strip() and bool(anchor_pattern.search(block))
-
-    source_blocks = blocks(source)
-    translated_blocks = blocks(translated)
-    source_visible = [item for item in source_blocks if not anchor_only(item[2])]
-    translated_visible = [item for item in translated_blocks if not anchor_only(item[2])]
+    source_blocks = text_blocks(source)
+    translated_blocks = text_blocks(translated)
+    source_visible = [item for item in source_blocks if not structural_only(item[2])]
+    translated_visible = [item for item in translated_blocks if not structural_only(item[2])]
     insertions = []
     visible_before = 0
     remaining = missing.copy()
     for _start, _end, block in source_blocks:
-        if not anchor_only(block):
+        if not structural_only(block):
             visible_before += 1
             continue
-        tokens = []
-        for value in anchor_pattern.findall(block):
-            if remaining[value] > 0:
-                tokens.append(f'[[EPUB_ANCHOR:{value}]]')
-                remaining[value] -= 1
-        if not tokens:
+        snippets = []
+        for key, snippet in structural_tokens(block):
+            if remaining[key] > 0:
+                snippets.append(snippet)
+                remaining[key] -= 1
+        if not snippets:
             continue
         index = visible_before
         if len(source_visible) != len(translated_visible):
             index = round(visible_before * len(translated_visible) / max(1, len(source_visible)))
+        content = block.strip('\n') if len(snippets) == len(structural_tokens(block)) else '\n'.join(snippets)
         if index < len(translated_visible):
             position = translated_visible[index][0]
-            payload = '\n'.join(tokens) + '\n\n'
+            payload = content + '\n\n'
         else:
             position = len(translated.rstrip())
-            payload = ('\n\n' if position else '') + '\n'.join(tokens)
-        insertions.append((position, payload, len(tokens)))
+            payload = ('\n\n' if position else '') + content
+        insertions.append((position, payload, len(snippets)))
 
-    # Kaynakta yalniz blok halinde bulunmayan bir eksik capa varsa konumu
+    # Kaynakta yalniz blok halinde bulunmayan bir eksik isaret varsa konumu
     # belirsizdir; hicbir seyi kismen degistirmeden kati dogrulamaya birak.
     if any(remaining.values()):
         return translated, 0
@@ -421,19 +468,18 @@ def restore_missing_epub_anchors(source, translated):
 
 
 def model_source(text):
-    """Modele gidecek metin: yalnizca capa tasiyan bloklar cikarilir.
+    """Modele gidecek metin: yalnizca capa/gorsel tasiyan bloklar cikarilir.
 
     Gorunur metni olmayan capa listeleri modele gittiginde numaralari kaydirip
-    olmayan capalar uydurabiliyor; bunlari ``restore_missing_epub_anchors``
-    ceviriden sonra kaynaktaki yerine geri koyar.
+    olmayan capalar uydurabiliyor, tek basina duran gorselleri de dusurebiliyor;
+    bunlari ``restore_missing_epub_anchors`` ceviriden sonra yerine koyar.
     """
-    anchor_block = re.compile(r'(?:\[\[EPUB_ANCHOR:[^\]]+\]\]\s*)+')
     blocks = [block.strip('\n') for block in re.split(r'\n[ \t]*\n', text)
-              if block.strip() and not anchor_block.fullmatch(block.strip())]
+              if block.strip() and not structural_only(block)]
     return '\n\n'.join(blocks) + ('\n' if blocks and text.endswith('\n') else '')
 
 
-SHORT_TARGET = re.compile(r'(epub-link|epub-resource):@(\d+)(?!\d)|\[\[EPUB_ANCHOR:@(\d+)\]\]')
+SHORT_TARGET = re.compile(r'(epub-link|epub-resource):\s*@\s*(\d+)(?!\d)|\[\[\s*EPUB_ANCHOR:\s*@\s*(\d+)\s*\]\]')
 
 
 def shorten_targets(text):
@@ -455,9 +501,9 @@ def shorten_targets(text):
              if target.startswith('epub-resource:')]
     spans += [(start, end, target) for start, end, _label, target in markdown_spans(text)
               if target.startswith('epub-link:')]
-    for start, end, target in sorted(spans, reverse=True):
-        kind, value = target.split(':', 1)
-        text = text[:end - 1 - len(target)] + short(kind, value) + text[end - 1:]
+    replacements = [(start, end, target, short(*target.split(':', 1))) for start, end, target in sorted(spans)]
+    for start, end, target, value in reversed(replacements):
+        text = text[:end - 1 - len(target)] + value + text[end - 1:]
     text = re.sub(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]', lambda m: '[[EPUB_ANCHOR:@' + short('a', m.group(1))[3:] + ']]', text)
     return text, mapping
 
@@ -504,6 +550,14 @@ def repair_link_openers(source, translated):
         for target in list(missing):
             if missing[target] <= 0 or target not in line:
                 continue
+            # ``[104](epub-link:...]``: kapanis parantezi koseli yazilmis.
+            # ``](epub-link:...`` kapanissiz ya da ``]`` ile kapatilmis.
+            line, closers = re.subn(r'\(' + re.escape(target) + r'(?:\](?!\()|(?![)\]\w%./#-]))', '(' + target + ')',
+                                    line, count=missing[target])
+            if closers:
+                missing[target] -= closers
+                repaired += closers
+                continue
             prefix = re.match(r'[ \t]*(?:>[ \t]*)*(?:#{1,6}[ \t]+|\d+\.[ \t]+|[-*+][ \t]+)?', line).end()
             closing = line.find('](' + target + ')')
             if closing >= 0:
@@ -521,6 +575,79 @@ def repair_link_openers(source, translated):
             repaired += 1
         lines[number] = line
     return '\n'.join(lines), repaired
+
+
+def repair_table_separators(source, translated):
+    """Modelin dusurdugu Markdown tablo ayirici satirini geri ekler.
+
+    Diyalog tablolari (``|  |  |`` bos baslik + ``| --- | --- |``) icinde model
+    bazen ayirici satiri atiyor, bos baslikla ayiriciyi tek satirda birlestiriyor
+    (``|  | --- | --- |``) ya da uzun tabloyu bos satirla ikiye boluyor; tablo
+    duz metne donusuyor. Yalnizca kaynakla tablo yapisi tutmadiginda:
+    birlesik baslik iki satira ayrilir; ayiricisiz bir satir grubu, araya
+    yalnizca bos satir girmis bir onceki tablonun devamiysa ona eklenir, degilse
+    ayirici (kaynak tablolari bos baslikliysa bos baslikla birlikte) alir.
+    """
+    if protected_epub_tokens(source)['tablo yapisi'] == protected_epub_tokens(translated)['tablo yapisi']:
+        return translated, 0
+
+    def cells(line):
+        return re.split(r'(?<!\\)\|', line.strip().strip('|'))
+
+    def is_row(line):
+        return line.lstrip().startswith('|')
+
+    def separator(line):
+        return all(re.fullmatch(r'\s*:?-{3,}:?\s*', cell) for cell in cells(line))
+
+    def empty(line):
+        return not ''.join(cells(line)).strip()
+
+    def rule(width):
+        return '| ' + ' | '.join('---' for _ in range(width)) + ' |'
+
+    def blank_header(width):
+        return '| ' + ' | '.join('' for _ in range(width)) + ' |'
+
+    empty_headers = bool(re.search(r'(?m)^\|(?:\s*\|)+\s*\n\|\s*-{3,}', source))
+    repaired = 0
+    lines = []
+    raw_lines = translated.split('\n')
+    for number, line in enumerate(raw_lines):
+        parts = cells(line) if is_row(line) else []
+        dashes = [part for part in parts if re.fullmatch(r'\s*:?-{3,}:?\s*', part)]
+        if dashes and len(dashes) < len(parts) and all(not part.strip() or part in dashes for part in parts):
+            following = raw_lines[number + 1] if number + 1 < len(raw_lines) else ''
+            width = len(cells(following)) if is_row(following) else len(dashes)
+            lines += [blank_header(width), rule(width)]
+            repaired += 1
+            continue
+        lines.append(line)
+    result, index = [], 0
+    while index < len(lines):
+        if not is_row(lines[index]):
+            result.append(lines[index]); index += 1
+            continue
+        end = index
+        while end < len(lines) and is_row(lines[end]):
+            end += 1
+        run = lines[index:end]
+        width = len(cells(run[0]))
+        if width > 1 and all(len(cells(line)) == width for line in run) and not any(separator(line) for line in run):
+            previous = len(result)
+            while previous and not result[previous - 1].strip():
+                previous -= 1
+            if (not empty(run[0]) and previous < len(result) and previous
+                    and is_row(result[previous - 1]) and len(cells(result[previous - 1])) == width):
+                del result[previous:]
+            elif empty(run[0]) or not empty_headers:
+                run = run[:1] + [rule(width)] + run[1:]
+            else:
+                run = [blank_header(width), rule(width)] + run
+            repaired += 1
+        result.extend(run)
+        index = end
+    return '\n'.join(result), repaired
 
 
 def image_only_source(text):
@@ -1669,10 +1796,16 @@ class TranslationEngine:
                     translated, repaired_links = repair_link_openers(chunks[index], translated)
                     if repaired_links:
                         self.log(f'Modelin dusurdugu baglanti acilisi "[" onarildi: {repaired_links}')
+                    translated, repaired_tables = repair_table_separators(chunks[index], translated)
+                    if repaired_tables:
+                        self.log(f'Modelin dusurdugu tablo ayirici satiri onarildi: {repaired_tables}')
+                    translated, restored_notes = restore_missing_footnote_refs(chunks[index], translated)
+                    if restored_notes:
+                        self.log(f'Modelin dusurdugu dipnot isareti paragraf sonuna geri eklendi: {restored_notes}')
                     translated, restored_anchors = restore_missing_epub_anchors(chunks[index], translated)
                     if restored_anchors:
                         self.log(
-                            f'EPUB capasi kaynak konumundan otomatik geri yerlestirildi: '
+                            f'EPUB capasi/gorseli kaynak konumundan otomatik geri yerlestirildi: '
                             f'{restored_anchors}'
                         )
                     validate_translation_structure(chunks[index], translated)

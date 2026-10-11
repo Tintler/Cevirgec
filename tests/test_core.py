@@ -1701,6 +1701,46 @@ class ReviewFixTests(unittest.TestCase):
         broken = app_core.expand_targets('SÖZLÜK [epub-link:@1]', mapping)
         self.assertEqual(broken, 'SÖZLÜK [epub-link:text/p38.html%23147LC0-dc07a6b6d5d5434994eff]')
 
+    def test_standalone_image_is_kept_from_model_and_restored(self):
+        source = 'One.\n\n![image](epub-resource:OEBPS/images/Art_P182.jpg)\n\nTwo.\n\nThree.'
+        self.assertEqual(app_core.model_source(source), 'One.\n\nTwo.\n\nThree.')
+        restored, count = restore_missing_epub_anchors(source, 'Bir.\n\nİki.\n\nÜç.')
+        self.assertEqual((restored, count), ('Bir.\n\n![image](epub-resource:OEBPS/images/Art_P182.jpg)\n\nİki.\n\nÜç.', 1))
+        validate_translation_structure(source, restored)
+
+    def test_dropped_table_separator_is_repaired(self):
+        source = ('|  |  |\n| --- | --- |\n| ME: | Hi. |\n| Y-KO: | Hey. |\n\nText.\n\n'
+                  '|  |  |\n| --- | --- |\n| ME: | Bye. |')
+        translated = ('|  |  |\n| BEN: | Selam. |\n| Y-KO: | Hey. |\n\nMetin.\n\n'
+                      '| BEN: | Hoşça kal. |')
+        repaired, count = app_core.repair_table_separators(source, translated)
+        self.assertEqual(count, 2)
+        self.assertEqual(repaired, '|  |  |\n| --- | --- |\n| BEN: | Selam. |\n| Y-KO: | Hey. |\n\nMetin.\n\n'
+                                   '|  |  |\n| --- | --- |\n| BEN: | Hoşça kal. |')
+        validate_translation_structure(source, repaired)
+        self.assertEqual(app_core.repair_table_separators(source, source), (source, 0))
+        # Birlesik baslik/ayirici ve bos satirla ikiye bolunmus tablo
+        source = '|  |  |\n| --- | --- |\n| ME: | A |\n| Y-KO: | B |\n| ME: | C |'
+        translated = '|  | --- | --- |\n| BEN: | A |\n\n| Y-KO: | B |\n| BEN: | C |'
+        repaired, _count = app_core.repair_table_separators(source, translated)
+        self.assertEqual(repaired, '|  |  |\n| --- | --- |\n| BEN: | A |\n| Y-KO: | B |\n| BEN: | C |')
+
+    def test_spaced_short_id_is_expanded(self):
+        mapping = {'1': 'text/part0011.html%23f100ch06a'}
+        self.assertEqual(app_core.expand_targets('x.[100](epub-link: @1)', mapping),
+                         'x.[100](epub-link:text/part0011.html%23f100ch06a)')
+        source = 'A.[104](epub-link:n.html%23f104) B.'
+        repaired, count = app_core.repair_link_openers(source, 'A.[104](epub-link:n.html%23f104] B.')
+        self.assertEqual((repaired, count), (source, 1))
+        repaired, count = app_core.repair_link_openers(
+            '“… good.” [57](epub-link:n.html%23f57) But', '“… iyi.” [57](epub-link:n.html%23f57 alay etti.')
+        self.assertEqual((repaired, count), ('“… iyi.” [57](epub-link:n.html%23f57) alay etti.', 1))
+        source = 'One.[1](epub-link:n%23f1)\n\nTwo, three.^[2](epub-link:n%23f2)^ Four.'
+        restored, count = app_core.restore_missing_footnote_refs(source, 'Bir.[1](epub-link:n%23f1)\n\nİki, üç. Dört.')
+        self.assertEqual((restored, count), ('Bir.[1](epub-link:n%23f1)\n\nİki, üç. Dört.^[2](epub-link:n%23f2)^', 1))
+        short, _mapping = app_core.shorten_targets('[1](epub-link:a) [2](epub-link:b)')
+        self.assertEqual(short, '[1](epub-link:@1) [2](epub-link:@2)')
+
     def test_dropped_link_opening_bracket_is_repaired(self):
         source = ('45. [ONE](epub-link:OPS/c45.xhtml)\n46. [*TWO*](epub-link:OPS/c46.xhtml)\n'
                   '- [THREE](epub-link:OPS/c47.xhtml)')
