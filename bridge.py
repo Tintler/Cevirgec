@@ -360,8 +360,8 @@ class Bridge:
         return self.snapshot()
 
     def model_check(self):
-        """Step 2: block when LM Studio does not offer the configured model, warn when it is not loaded yet
-        or LM Studio was unreachable."""
+        """Step 2: block when LM Studio does not offer the configured model, warn when LM Studio was
+        unreachable, inform when the model still has to be loaded."""
         configured = load_config()['model']
         if self._available_models and configured not in self._available_models:
             return {'block': 'Ayarlar bölümünden LM Studio’nun sunduğu modellerden birini seçin.'}
@@ -369,8 +369,7 @@ class Bridge:
             return {'warn': 'LM Studio model listesi sorgulanamadı. Sunucunun açık olduğunu doğrulayın; '
                             'aksi hâlde çeviri istekleri başarısız olabilir.'}
         if configured not in self._loaded_models:
-            return {'warn': f'{configured} şu an LM Studio’da yüklü değil; ilk istekte yüklenecek. '
-                            'Bu, modelin boyutuna göre biraz sürebilir.'}
+            return {'info': f'{configured} LM Studio’ya yükleniyor; modelin boyutuna göre biraz sürebilir.'}
         return {}
 
     def analysis_candidates(self):
@@ -446,9 +445,23 @@ class Bridge:
             self._thread.start()
         self._push_status()
 
+    def _ensure_model_loaded(self):
+        """Load an offered-but-unloaded model up front so the run sees its real context length,
+        then refresh the sidebar's model status."""
+        cfg = load_config()
+        if not self._available_models or cfg['model'] in self._loaded_models:
+            return
+        self._log(f'Model LM Studio’ya yükleniyor: {cfg["model"]}')
+        try:
+            Client(cfg, self._log).context_length()
+        except Exception as error:
+            self._log(f'UYARI: Model önceden yüklenemedi, ilk istekte yüklenmesi beklenecek: {error}')
+        self.refresh_models()
+
     def _work(self, book, analysis_files, rerun_files):
         outcome, message = 'failed', ''
         try:
+            self._ensure_model_loaded()
             engine = TranslationEngine(load_config, self._controller, self._log, self._on_progress)
             if analysis_files is not None:
                 engine.run_analysis(book, analysis_files)

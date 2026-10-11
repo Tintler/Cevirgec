@@ -56,6 +56,7 @@
     const check = await call('model_check');
     if (check.block) { await notice('Model seçilmedi', check.block); return; }
     if (check.warn) await notice('LM Studio bağlantısı doğrulanamadı', check.warn);
+    if (check.info) toast(check.info);
     let files = null;
     if (ui.preAnalysis) {
       const candidates = await act('analysis_candidates');

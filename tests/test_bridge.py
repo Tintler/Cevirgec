@@ -231,8 +231,7 @@ class BridgeTests(unittest.TestCase):
                 event = recorder.wait_for('models')
         self.assertEqual(event['available'], ['gemma-4', 'qwen3.6-35b-a3b'])
         self.assertEqual(event['model'], 'qwen3.6-35b-a3b')       # an unloaded choice is kept
-        self.assertIn('warn', self.bridge.model_check())
-        self.assertNotIn('block', self.bridge.model_check())
+        self.assertEqual(set(self.bridge.model_check()), {'info'})   # no dialog, just a notice
 
     def test_open_project_validates_folder(self):
         self.assertIn('error', self.bridge.open_project(str(self.root)))
