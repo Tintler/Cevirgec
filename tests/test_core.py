@@ -328,6 +328,10 @@ class CoreTests(unittest.TestCase):
             'output': [{'type': 'message', 'content': '# İçindekiler\n\n[Kapak](epub-link:@1)'}], 'stats': {}}
         with self.assertRaisesRegex(ValueError, 'tamamlanma isareti'):
             client.generate('s', 'u', 100, require_marker=accept)
+        invented = '[Kapak](epub-link:@1)\n\n[Telif](epub-link:@2)\n\n# Navigasyon\n\n1. [Oku](epub-link:@3)'
+        self.assertEqual(app_core.trim_after_final_link(invented, 'epub-link:@2'),
+                         ('[Kapak](epub-link:@1)\n\n[Telif](epub-link:@2)', len('# Navigasyon\n\n1. [Oku](epub-link:@3)')))
+        self.assertEqual(app_core.trim_after_final_link('[A](epub-link:@2)\n', 'epub-link:@2'), ('[A](epub-link:@2)\n', 0))
 
     def test_analysis_retries_transient_connection_errors_automatically(self):
         class FakeClient:
@@ -1755,6 +1759,24 @@ class ReviewFixTests(unittest.TestCase):
         self.assertEqual((restored, count), ('Bir.[1](epub-link:n%23f1)\n\nİki, üç. Dört.^[2](epub-link:n%23f2)^', 1))
         short, _mapping = app_core.shorten_targets('[1](epub-link:a) [2](epub-link:b)')
         self.assertEqual(short, '[1](epub-link:@1) [2](epub-link:@2)')
+
+    def test_model_corrected_link_target_is_restored_but_reorder_is_not(self):
+        source = '[TOC](epub-link:contents.html) [Next →](epub-link:contents.html) [1](epub-link:c1.html)'
+        translated = '[İçindekiler](epub-link:contents.html) [Sonraki →](epub-link:c1.html) [1](epub-link:c1.html)'
+        repaired, count = app_core.repair_link_substitutions(source, translated)
+        self.assertEqual(count, 1)
+        validate_translation_structure(source, repaired)
+        self.assertIn('[Sonraki →](epub-link:contents.html)', repaired)
+        reordered = '[B](epub-link:b.html) ve [A](epub-link:a.html)'
+        self.assertEqual(app_core.repair_link_substitutions('[A](epub-link:a.html) [B](epub-link:b.html)', reordered),
+                         (reordered, 0))
+
+    def test_hidden_elements_are_not_imported(self):
+        from epub_import import Markdown
+        parser = Markdown('OPS/c1.xhtml')
+        parser.feed('<p>Shown.</p><nav epub:type="landmarks" hidden="hidden"><h1>Navigation</h1><ol><li>'
+                    '<a href="c2.xhtml">Begin</a></li></ol></nav><p>After<img hidden="" src="x.png"/>.</p>')
+        self.assertEqual(parser.result(), 'Shown.\n\nAfter.\n')
 
     def test_dropped_link_opening_bracket_is_repaired(self):
         source = ('45. [ONE](epub-link:OPS/c45.xhtml)\n46. [*TWO*](epub-link:OPS/c46.xhtml)\n'

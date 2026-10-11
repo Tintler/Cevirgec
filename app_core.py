@@ -375,6 +375,21 @@ def final_link_target(text):
     return None
 
 
+def trim_after_final_link(translated, target):
+    """Kaynak ``target`` baglantisiyla bitiyorsa cevirideki sonrasini keser.
+
+    Icindekiler sayfalarinda model listeyi bitirdikten sonra kaynakta olmayan
+    bir "Navigasyon" bolumu uydurabiliyor. Son baglanti ceviride tek kez
+    geciyorsa ondan sonrasi kaynagin otesidir.
+    """
+    end = '(' + target + ')'
+    if translated.count(end) != 1:
+        return translated, 0
+    cut = translated.index(end) + len(end)
+    extra = translated[cut:].strip()
+    return (translated[:cut], len(extra)) if extra else (translated, 0)
+
+
 def text_blocks(text):
     """Bos satirla ayrilmis bloklar: (baslangic, bitis, metin)."""
     result = []
@@ -583,6 +598,32 @@ def repair_link_openers(source, translated):
             repaired += 1
         lines[number] = line
     return '\n'.join(lines), repaired
+
+
+def repair_link_substitutions(source, translated):
+    """Modelin "duzelttigi" EPUB ici baglanti hedeflerini kaynaktakine geri alir.
+
+    Kaynakta hatali bir hedef varsa (Genji: "Sonraki ->" Icindekiler'i
+    gosteriyor) model bunu her seferinde mantikli olanla degistiriyor. Baglanti
+    sayisi ve sirasi ayniysa ve farkli konumlarin sayisi tam olarak eksik hedef
+    sayisi kadarsa (yer degistirme yok, yalnizca ikame) o konumlara kaynaktaki
+    hedef geri yazilir.
+    """
+    def links(text):
+        return [(start, end, target) for start, end, _label, target in markdown_spans(text)
+                if target.startswith('epub-link:')]
+
+    source_links, translated_links = links(source), links(translated)
+    if len(source_links) != len(translated_links):
+        return translated, 0
+    missing = Counter(item[2] for item in source_links) - Counter(item[2] for item in translated_links)
+    differing = [(index, item) for index, item in enumerate(translated_links) if item[2] != source_links[index][2]]
+    if not missing or len(differing) != sum(missing.values()):
+        return translated, 0
+    for index, (_start, end, target) in reversed(differing):
+        replacement = source_links[index][2]
+        translated = translated[:end - 1 - len(target)] + replacement + translated[end - 1:]
+    return translated, len(differing)
 
 
 def repair_table_separators(source, translated):
@@ -1451,7 +1492,7 @@ class Client:
             # bitiyorsa) kabul edilir.
             if not (callable(require_marker) and require_marker(text)):
                 raise ValueError('Yanit tamamlanma isareti tasimiyor; sonuc kaydedilmedi.')
-            self.log('Bitis isareti yok; yanit kaynagin son baglantisiyla bittigi icin tam kabul edildi.')
+            self.log('Bitis isareti yok; yanit kaynagin son baglantisina ulastigi icin tam kabul edildi.')
         if allow_json_fence and text.startswith('```'):
             fenced = re.fullmatch(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.S | re.I)
             if fenced:
@@ -1789,8 +1830,9 @@ class TranslationEngine:
             final_link = final_link_target(prompt_chunk)
             if require_marker and final_link:
                 # Icindekiler gibi baglantiyla biten parcalarda model bitis
-                # isaretini sik unutuyor; son baglantiyla bitmesi tamlik kaniti.
-                require_marker = lambda text, end='(' + final_link + ')': text.rstrip().endswith(end)
+                # isaretini sik unutuyor; son baglantiya ulasmasi tamlik kaniti
+                # (sonrasi asagida kesilir).
+                require_marker = lambda text, end='(' + final_link + ')': text.count(end) == 1
             if not require_marker:
                 if cfg['completion_marker_enabled']:
                     reason = f'isaretsiz kabul siniri={cfg["completion_marker_exempt_chars"]}'
@@ -1808,12 +1850,19 @@ class TranslationEngine:
                         client, retry_system, user, int(cfg['max_tokens']),
                         require_marker=require_marker,
                     )
+                    if final_link:
+                        translated, trimmed = trim_after_final_link(translated, final_link)
+                        if trimmed:
+                            self.log(f'Kaynagin son baglantisindan sonra modelin ekledigi {trimmed} karakter kesildi.')
                     translated = self._enforce_glossary(
                         client, prompt_chunk, translated, glossary, int(cfg['max_tokens']))
                     translated = expand_targets(translated, targets)
                     translated, repaired_links = repair_link_openers(chunks[index], translated)
                     if repaired_links:
                         self.log(f'Modelin dusurdugu baglanti acilisi "[" onarildi: {repaired_links}')
+                    translated, restored_targets = repair_link_substitutions(chunks[index], translated)
+                    if restored_targets:
+                        self.log(f'Modelin degistirdigi baglanti hedefi kaynaktakine geri alindi: {restored_targets}')
                     translated, repaired_tables = repair_table_separators(chunks[index], translated)
                     if repaired_tables:
                         self.log(f'Modelin dusurdugu tablo ayirici satiri onarildi: {repaired_tables}')

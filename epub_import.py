@@ -11,6 +11,7 @@ import zipfile
 
 
 EXTERNAL_LINK = re.compile(r'^(?:https?:|mailto:)', re.I)
+VOID_TAGS = {'area','base','br','col','embed','hr','img','input','link','meta','source','track','wbr'}
 ANCHOR_TOKEN = re.compile(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]')
 # Windows MAX_PATH (260) icinde kalmak icin: klasor + _python_translation/<dosya>/part-001.md
 FOLDER_STEM_CHARS = 60
@@ -50,6 +51,7 @@ class Markdown(HTMLParser):
     def __init__(self, document_path):
         super().__init__(convert_charrefs=True)
         self.out=[]; self.skip=0; self.pre=False; self.anchors={}
+        self.hidden=None  # [etiket, derinlik]: hidden ozellikli ogenin icindeyiz
         self.document_path=document_path; self.links=[]; self.lists=[]; self.quote=0
         self.targets=set()  # bu belgeden verilen EPUB ici baglanti hedefleri
         self.table=None; self.table_row=None; self.table_cell=None; self.table_header=False
@@ -108,6 +110,14 @@ class Markdown(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs=dict(attrs)
+        if self.hidden:
+            if tag==self.hidden[0]:self.hidden[1]+=1
+            return
+        if 'hidden' in attrs:
+            # Okuyucuda gorunmeyen oge (or. EPUB3 landmarks <nav hidden>):
+            # cevrilecek metne girmemeli.
+            if tag not in VOID_TAGS:self.hidden=[tag,1]
+            return
         if tag in ('script','style','head'):
             self.skip+=1; return
         if self.skip:return
@@ -164,6 +174,11 @@ class Markdown(HTMLParser):
         elif tag=='pre':self.pre=True;self._append('\n\n')
 
     def handle_endtag(self,tag):
+        if self.hidden:
+            if tag==self.hidden[0]:
+                self.hidden[1]-=1
+                if not self.hidden[1]:self.hidden=None
+            return
         if tag in ('script','style','head'):
             self.skip=max(0,self.skip-1);return
         if self.skip:return
@@ -193,7 +208,7 @@ class Markdown(HTMLParser):
             if href: self._append(']('+href+')')
 
     def handle_data(self,data):
-        if not self.skip:self._append(data if self.pre else re.sub(r'\s+',' ',data))
+        if not self.skip and not self.hidden:self._append(data if self.pre else re.sub(r'\s+',' ',data))
 
     def result(self):
         return tidy_markdown(''.join(self.out)).strip()+'\n'
