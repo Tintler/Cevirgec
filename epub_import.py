@@ -306,11 +306,14 @@ def chapter_files(z,opf,manifest,spine,package,slug_chars=SLUG_CHARS):
         entries=[];mode+=' (tek girdi; spine kullanildi)'
     boundaries={}
     for path,anchor,label in entries:
-        if path not in documents:raise ValueError('TOC hedefi spine icinde yok: '+path)
+        # Yayincilarin biraktigi kopuk TOC girdileri (silinmis kapak, olmayan
+        # capa) tum kitabi durdurmasin: girdi atlanir / belge basi kullanilir.
+        if path not in documents:
+            print('UYARI: TOC hedefi spine icinde yok, atlandi: '+path,flush=True);continue
         offset,anchors=documents[path]
         if anchor:
-            if anchor not in anchors:raise ValueError('TOC bolum isareti bulunamadi: '+path+'#'+anchor)
-            offset+=anchors[anchor]
+            if anchor in anchors:offset+=anchors[anchor]
+            else:print('UYARI: TOC bolum isareti bulunamadi, belge basi kullanildi: '+path+'#'+anchor,flush=True)
         boundaries[offset]=label
     if not boundaries:
         boundaries=dict(starts)

@@ -1862,6 +1862,22 @@ class ReviewFixTests(unittest.TestCase):
             marker = json.loads((book / 'epub-import.json').read_text(encoding='utf-8'))
             self.assertEqual(len(marker['files']), 3)
 
+    def test_dangling_toc_entries_are_skipped(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); source = root / 'dangling.epub'
+            make_epub(source)
+            with zipfile.ZipFile(source) as archive:
+                files = {name: archive.read(name) for name in archive.namelist()}
+            files['OPS/nav.xhtml'] = files['OPS/nav.xhtml'].replace(
+                b'<li><a href="c1.xhtml">One</a></li>',
+                b'<li><a href="cover.xhtml">Cover</a></li><li><a href="c1.xhtml#missing">One</a></li>')
+            with zipfile.ZipFile(source, 'w') as archive:
+                for name, data in files.items():
+                    archive.writestr(name, data)
+            book = prepare(source, root / 'work')
+            marker = json.loads((book / 'epub-import.json').read_text(encoding='utf-8'))
+            self.assertEqual(len(marker['files']), 2)
+
     def test_long_epub_name_fits_windows_path_limit(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); work = root / ('w' * 80)
