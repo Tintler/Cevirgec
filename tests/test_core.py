@@ -1757,6 +1757,16 @@ class ReviewFixTests(unittest.TestCase):
         source = 'One.[1](epub-link:n%23f1)\n\nTwo, three.^[2](epub-link:n%23f2)^ Four.'
         restored, count = app_core.restore_missing_footnote_refs(source, 'Bir.[1](epub-link:n%23f1)\n\nİki, üç. Dört.')
         self.assertEqual((restored, count), ('Bir.[1](epub-link:n%23f1)\n\nİki, üç. Dört.^[2](epub-link:n%23f2)^', 1))
+        source = '5. [Prologue](epub-link:p) \n6. [Death](epub-link:d) \n\n[prologue A New Order](epub-link:n)'
+        translated = '5. [[Prolog]](epub-link:p) \n6. [[Ölüm](epub-link:d) \n\n[prolog](Yeni Bir Düzen)(epub-link:n)'
+        repaired, count = app_core.repair_link_openers(source, translated)
+        self.assertEqual((repaired, count), (
+            '5. [Prolog](epub-link:p) \n6. [Ölüm](epub-link:d) \n\n[prolog Yeni Bir Düzen](epub-link:n)', 3))
+        repaired, count = app_core.repair_link_openers('[1 Hesitation](epub-link:h)', '[1] Tereddüt(epub-link:h)')
+        self.assertEqual((repaired, count), ('[1 Tereddüt](epub-link:h)', 1))
+        repaired, count = app_core.repair_link_openers('[prologue A New Order](epub-link:n)',
+                                                       '[prolog](Yeni Bir Düzen)](epub-link:n)')
+        self.assertEqual((repaired, count), ('[prolog Yeni Bir Düzen](epub-link:n)', 1))
         short, _mapping = app_core.shorten_targets('[1](epub-link:a) [2](epub-link:b)')
         self.assertEqual(short, '[1](epub-link:@1) [2](epub-link:@2)')
 

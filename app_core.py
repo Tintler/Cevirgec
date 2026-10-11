@@ -581,6 +581,20 @@ def repair_link_openers(source, translated):
                 missing[target] -= closers
                 repaired += closers
                 continue
+            # ``[[Etiket]](hedef)`` / ``[[Etiket](hedef)``: cift koseli parantez
+            # ``[[`` EPUB isareti sanilip baglanti hic gorulmuyor.
+            # ``[prolog](Yeni Bir Duzen)(hedef)``: iki satirli etiket bolunmus.
+            pattern = (r'\[\[(?!EPUB_ANCHOR:)([^\[\]\n]*)\]\]?\(' + re.escape(target) + r'\)'
+                       r'|\[([^\[\]\n]*)\]\(([^()\n:]*)\)\]?\(' + re.escape(target) + r'\)')
+            line, merged = re.subn(
+                pattern,
+                lambda m: '[' + (m.group(1) if m.group(1) is not None else (m.group(2) + ' ' + m.group(3)).strip())
+                          + '](' + target + ')',
+                line, count=missing[target])
+            if merged:
+                missing[target] -= merged
+                repaired += merged
+                continue
             prefix = re.match(r'[ \t]*(?:>[ \t]*)*(?:#{1,6}[ \t]+|\d+\.[ \t]+|[-*+][ \t]+)?', line).end()
             closing = line.find('](' + target + ')')
             if closing >= 0:
@@ -590,7 +604,9 @@ def repair_link_openers(source, translated):
             else:
                 if line.count(target) != 1 or any(item[3] == target for item in markdown_spans(line)):
                     continue
-                label = re.sub(r'\s*[\[(]?' + re.escape(target) + r'[\])]?', ' ', line[prefix:]).strip()
+                label = re.sub(r'\s*[\[(]?' + re.escape(target) + r'[\])]?', ' ', line[prefix:])
+                # ``[1] Tereddut(hedef)``: etiketteki koseli parantezler ``[[`` uretmesin.
+                label = ' '.join(re.sub(r'(?<!\\)[\[\]]', ' ', label).split())
                 if not label:
                     continue
                 line = line[:prefix] + '[' + label + '](' + target + ')'
