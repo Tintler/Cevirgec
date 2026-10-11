@@ -277,6 +277,10 @@ def chapter_files(z,opf,manifest,spine,package,slug_chars=SLUG_CHARS):
         documents[path]=(len(full),parser.anchors)
         starts.append((len(full),PurePosixPath(path).stem))
         full+=raw+'\n\n'
+    if len(entries)==1 and len(documents)>2:
+        # Calibre/OCR ciktilarinda TOC tek "Start" girdisi olabiliyor; tum
+        # kitap tek dev bolum olmasin, spine belgelerine gore bol.
+        entries=[];mode+=' (tek girdi; spine kullanildi)'
     boundaries={}
     for path,anchor,label in entries:
         if path not in documents:raise ValueError('TOC hedefi spine icinde yok: '+path)

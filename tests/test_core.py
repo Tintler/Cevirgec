@@ -1684,6 +1684,23 @@ class ReviewFixTests(unittest.TestCase):
             translated = (book / 'translation' / '001.md').read_text(encoding='utf-8')
             self.assertEqual(translated, '# İçindekiler\n\n' + anchors + '\n\nMetin.\n')
 
+    def test_long_epub_targets_reach_the_model_as_short_ids(self):
+        source = ('See [note](epub-link:text/p38.html%23147LC0-dc07a6b6d5d5434994eff) and '
+                  '![map](epub-resource:OPS/images/map(1).png)\n\n'
+                  '| A | B[[EPUB_ANCHOR:OPS/c1.xhtml%23t]] |\n| --- | --- |\n| 1 | 2 |\n\n'
+                  'Again [note](epub-link:text/p38.html%23147LC0-dc07a6b6d5d5434994eff).')
+        short, mapping = app_core.shorten_targets(source)
+        self.assertNotIn('dc07a6', short)
+        self.assertNotIn('map(1)', short)
+        self.assertEqual(short.count('epub-link:@1)'), 2)
+        translated = short.replace('See', 'Bkz.').replace('Again', 'Yine')
+        expanded = app_core.expand_targets(translated, mapping)
+        validate_translation_structure(source, expanded)
+        self.assertEqual(app_core.plain_context(source).splitlines()[0], 'See note and ')
+        # Model kisa kimligi bicim disinda yazsa da asil hedef geri gelir; onarim gerisini yapar.
+        broken = app_core.expand_targets('SÖZLÜK [epub-link:@1]', mapping)
+        self.assertEqual(broken, 'SÖZLÜK [epub-link:text/p38.html%23147LC0-dc07a6b6d5d5434994eff]')
+
     def test_dropped_link_opening_bracket_is_repaired(self):
         source = ('45. [ONE](epub-link:OPS/c45.xhtml)\n46. [*TWO*](epub-link:OPS/c46.xhtml)\n'
                   '- [THREE](epub-link:OPS/c47.xhtml)')
@@ -1694,6 +1711,10 @@ class ReviewFixTests(unittest.TestCase):
         self.assertIn('46. [*İKİ*](epub-link:OPS/c46.xhtml)', repaired)
         self.assertIn('- [ÜÇ](epub-link:OPS/c47.xhtml)', repaired)
         validate_translation_structure(source, repaired)
+        source = '[GLOSSARY](epub-link:OPS/g.html)\n\n[COPYRIGHT](epub-link:OPS/c.html)'
+        translated = 'SÖZLÜK [epub-link:OPS/g.html]\n\nTELİF HAKLARI[epub-link:OPS/c.html]'
+        repaired, count = app_core.repair_link_openers(source, translated)
+        self.assertEqual((repaired, count), ('[SÖZLÜK](epub-link:OPS/g.html)\n\n[TELİF HAKLARI](epub-link:OPS/c.html)', 2))
 
     def test_image_only_chapter_is_copied_without_model_request(self):
         class NoRequestClient:
@@ -1754,6 +1775,27 @@ class ReviewFixTests(unittest.TestCase):
         result = tidy_anchors(text, {'OPS/c1.xhtml#ref1', 'OPS/c1.xhtml#t'})
         self.assertEqual(result, '# Title\n\n[[EPUB_ANCHOR:OPS/c1.xhtml%23ref1]]\n\nHe said hi.\n\n'
                                  '| A | B[[EPUB_ANCHOR:OPS/c1.xhtml%23t]] |\n| --- | --- |\n| 1 | 2 |')
+
+    def test_single_entry_toc_splits_by_spine(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); source = root / 'single.epub'
+            container = '<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0"><rootfiles><rootfile full-path="OPS/book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'
+            opf = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">'
+                   '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="uid">s</dc:identifier><dc:title>S</dc:title></metadata><manifest>'
+                   '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'
+                   + ''.join(f'<item id="c{i}" href="c{i}.xhtml" media-type="application/xhtml+xml"/>' for i in range(3))
+                   + '</manifest><spine>' + ''.join(f'<itemref idref="c{i}"/>' for i in range(3)) + '</spine></package>')
+            nav = '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol><li><a href="c0.xhtml">Start</a></li></ol></nav></body></html>'
+            with zipfile.ZipFile(source, 'w') as archive:
+                archive.writestr('mimetype', 'application/epub+zip', compress_type=zipfile.ZIP_STORED)
+                archive.writestr('META-INF/container.xml', container)
+                archive.writestr('OPS/book.opf', opf)
+                archive.writestr('OPS/nav.xhtml', nav)
+                for i in range(3):
+                    archive.writestr(f'OPS/c{i}.xhtml', f'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Part {i}.</p></body></html>')
+            book = prepare(source, root / 'work')
+            marker = json.loads((book / 'epub-import.json').read_text(encoding='utf-8'))
+            self.assertEqual(len(marker['files']), 3)
 
     def test_long_epub_name_fits_windows_path_limit(self):
         with tempfile.TemporaryDirectory() as temp:

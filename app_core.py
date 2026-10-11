@@ -433,12 +433,67 @@ def model_source(text):
     return '\n\n'.join(blocks) + ('\n' if blocks and text.endswith('\n') else '')
 
 
+SHORT_TARGET = re.compile(r'(epub-link|epub-resource):@(\d+)(?!\d)|\[\[EPUB_ANCHOR:@(\d+)\]\]')
+
+
+def shorten_targets(text):
+    """EPUB hedeflerini modele ``epub-link:@3`` gibi kisa kimliklerle gonderir.
+
+    Uzun hedefler (ornegin ``part0038.html#147LC0-dc07a6b6d5d5...``) modelce
+    tek karakter kaydirilarak bozulabiliyor. Ayni hedef ayni kimligi alir;
+    ``expand_targets`` ceviriden sonra asil hedefleri geri koyar.
+    """
+    mapping, ids = {}, {}
+
+    def short(kind, target):
+        if target not in ids:
+            ids[target] = str(len(ids) + 1)
+            mapping[ids[target]] = target
+        return kind + ':@' + ids[target]
+
+    spans = [(start, end, target) for start, end, _label, target in markdown_spans(text, image_only=True)
+             if target.startswith('epub-resource:')]
+    spans += [(start, end, target) for start, end, _label, target in markdown_spans(text)
+              if target.startswith('epub-link:')]
+    for start, end, target in sorted(spans, reverse=True):
+        kind, value = target.split(':', 1)
+        text = text[:end - 1 - len(target)] + short(kind, value) + text[end - 1:]
+    text = re.sub(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]', lambda m: '[[EPUB_ANCHOR:@' + short('a', m.group(1))[3:] + ']]', text)
+    return text, mapping
+
+
+def expand_targets(text, mapping):
+    """``shorten_targets`` kimliklerini asil hedeflere cevirir; bilinmeyen
+    kimlik oldugu gibi kalir ve yapisal dogrulamada reddedilir."""
+    def full(match):
+        key = match.group(2) or match.group(3)
+        if key not in mapping:
+            return match.group(0)
+        if match.group(3):
+            return '[[EPUB_ANCHOR:' + mapping[key] + ']]'
+        return match.group(1) + ':' + mapping[key]
+    return SHORT_TARGET.sub(full, text)
+
+
+def plain_context(text):
+    """Onceki ceviri sonu yalnizca baglam icindir: EPUB hedefleri cikarilir."""
+    for start, end, label, target in sorted(markdown_spans(text, image_only=True), reverse=True):
+        if target.startswith('epub-resource:'):
+            text = text[:start] + text[end:]
+    for start, end, label, target in sorted(markdown_spans(text), reverse=True):
+        if target.startswith('epub-link:'):
+            text = text[:start] + label + text[end:]
+    return re.sub(r'\[\[EPUB_ANCHOR:[^\]]+\]\]\n?', '', text)
+
+
 def repair_link_openers(source, translated):
     """Modelin dusurdugu ``[`` acilisini EPUB ici baglantilara geri ekler.
 
     Uzun icindekiler listelerinde model bazen ``46. Baslik](epub-link:...)``
-    yaziyor. Yalnizca kaynakta olup ceviride eksik kalan hedefler, satir basi
-    (liste/baslik isaretinden sonra) ile ``](`` arasinda ``[`` yoksa onarilir.
+    ya da ``Baslik [epub-link:...]`` yaziyor. Yalnizca kaynakta olup ceviride
+    eksik kalan hedefler onarilir: ``](`` oncesinde ``[`` yoksa satir basina
+    (liste/baslik isaretinden sonra) eklenir; hedef satirda ciplak tek bir kez
+    geciyorsa satirin metni etiket yapilarak ``[metin](hedef)`` kurulur.
     """
     missing = protected_epub_tokens(source)['ic baglanti'] - protected_epub_tokens(translated)['ic baglanti']
     if not missing:
@@ -447,13 +502,21 @@ def repair_link_openers(source, translated):
     repaired = 0
     for number, line in enumerate(lines):
         for target in list(missing):
-            closing = line.find('](' + target + ')')
-            if closing < 0 or missing[target] <= 0:
+            if missing[target] <= 0 or target not in line:
                 continue
             prefix = re.match(r'[ \t]*(?:>[ \t]*)*(?:#{1,6}[ \t]+|\d+\.[ \t]+|[-*+][ \t]+)?', line).end()
-            if '[' in line[prefix:closing]:
-                continue
-            line = line[:prefix] + '[' + line[prefix:]
+            closing = line.find('](' + target + ')')
+            if closing >= 0:
+                if '[' in line[prefix:closing]:
+                    continue
+                line = line[:prefix] + '[' + line[prefix:]
+            else:
+                if line.count(target) != 1 or any(item[3] == target for item in markdown_spans(line)):
+                    continue
+                label = re.sub(r'\s*[\[(]?' + re.escape(target) + r'[\])]?', ' ', line[prefix:]).strip()
+                if not label:
+                    continue
+                line = line[:prefix] + '[' + label + '](' + target + ')'
             missing[target] -= 1
             repaired += 1
         lines[number] = line
@@ -1579,7 +1642,8 @@ class TranslationEngine:
                 atomic(work / f'part-{index + 1:03}.md', state['parts'][-1] + '\n')
                 self.log(f'Parca {index + 1} yalnizca EPUB capasi tasiyor; modele gonderilmeden kaydedildi.')
                 continue
-            previous = state['parts'][-1][-1800:] if state['parts'] else '(Yok)'
+            prompt_chunk, targets = shorten_targets(prompt_chunk)
+            previous = plain_context(state['parts'][-1])[-1800:] if state['parts'] else '(Yok)'
             user = f'BOOK REFERENCE DATA:\n{reference}\n\nMANDATORY USER GLOSSARY:\n{glossary_text(glossary)}\n\nPREVIOUS TRANSLATION END:\n{previous}\n\nSOURCE TO TRANSLATE — PART {index + 1}/{len(chunks)}:\n{prompt_chunk}'
             require_marker = translation_requires_completion_marker(prompt_chunk, cfg)
             if not require_marker:
@@ -1601,6 +1665,7 @@ class TranslationEngine:
                     )
                     translated = self._enforce_glossary(
                         client, prompt_chunk, translated, glossary, int(cfg['max_tokens']))
+                    translated = expand_targets(translated, targets)
                     translated, repaired_links = repair_link_openers(chunks[index], translated)
                     if repaired_links:
                         self.log(f'Modelin dusurdugu baglanti acilisi "[" onarildi: {repaired_links}')
