@@ -367,6 +367,14 @@ def structural_only(block):
     return bool(tokens) and not rest.strip()
 
 
+def final_link_target(text):
+    """Metin bir Markdown baglantisiyla bitiyorsa onun hedefi, yoksa None."""
+    spans = list(markdown_spans(text))
+    if spans and spans[-1][1] == len(text.rstrip()):
+        return spans[-1][3]
+    return None
+
+
 def text_blocks(text):
     """Bos satirla ayrilmis bloklar: (baslangic, bitis, metin)."""
     result = []
@@ -1438,7 +1446,12 @@ class Client:
         if text.endswith(end_marker) and text.count(end_marker) == 1:
             text = text[:-len(end_marker)].rstrip()
         elif require_marker:
-            raise ValueError('Yanit tamamlanma isareti tasimiyor; sonuc kaydedilmedi.')
+            # require_marker bir fonksiyon olabilir: isaretsiz yanit yine de
+            # sona ulastigini kanitliyorsa (ornegin kaynagin son baglantisiyla
+            # bitiyorsa) kabul edilir.
+            if not (callable(require_marker) and require_marker(text)):
+                raise ValueError('Yanit tamamlanma isareti tasimiyor; sonuc kaydedilmedi.')
+            self.log('Bitis isareti yok; yanit kaynagin son baglantisiyla bittigi icin tam kabul edildi.')
         if allow_json_fence and text.startswith('```'):
             fenced = re.fullmatch(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.S | re.I)
             if fenced:
@@ -1773,6 +1786,11 @@ class TranslationEngine:
             previous = plain_context(state['parts'][-1])[-1800:] if state['parts'] else '(Yok)'
             user = f'BOOK REFERENCE DATA:\n{reference}\n\nMANDATORY USER GLOSSARY:\n{glossary_text(glossary)}\n\nPREVIOUS TRANSLATION END:\n{previous}\n\nSOURCE TO TRANSLATE — PART {index + 1}/{len(chunks)}:\n{prompt_chunk}'
             require_marker = translation_requires_completion_marker(prompt_chunk, cfg)
+            final_link = final_link_target(prompt_chunk)
+            if require_marker and final_link:
+                # Icindekiler gibi baglantiyla biten parcalarda model bitis
+                # isaretini sik unutuyor; son baglantiyla bitmesi tamlik kaniti.
+                require_marker = lambda text, end='(' + final_link + ')': text.rstrip().endswith(end)
             if not require_marker:
                 if cfg['completion_marker_enabled']:
                     reason = f'isaretsiz kabul siniri={cfg["completion_marker_exempt_chars"]}'

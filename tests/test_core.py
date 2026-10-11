@@ -314,6 +314,21 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'dusunce/tool'):
                 client.generate('system', 'user', 100)
 
+    def test_unmarked_reply_ending_with_the_final_link_is_accepted(self):
+        cfg = dict(DEFAULT_CONFIG); cfg['token_estimation_enabled'] = False
+        client = Client(cfg, lambda _message: None)
+        source = '# Contents\n\n[Cover](epub-link:@1)\n\n[Copyright](epub-link:@2)\n'
+        self.assertEqual(app_core.final_link_target(source), 'epub-link:@2')
+        self.assertIsNone(app_core.final_link_target('[A](epub-link:@1) and text.'))
+        accept = lambda text: text.rstrip().endswith('(epub-link:@2)')
+        client.request = lambda _route, payload=None: {
+            'output': [{'type': 'message', 'content': '# İçindekiler\n\n[Kapak](epub-link:@1)\n\n[Telif](epub-link:@2)'}], 'stats': {}}
+        self.assertTrue(client.generate('s', 'u', 100, require_marker=accept).endswith('(epub-link:@2)'))
+        client.request = lambda _route, payload=None: {
+            'output': [{'type': 'message', 'content': '# İçindekiler\n\n[Kapak](epub-link:@1)'}], 'stats': {}}
+        with self.assertRaisesRegex(ValueError, 'tamamlanma isareti'):
+            client.generate('s', 'u', 100, require_marker=accept)
+
     def test_analysis_retries_transient_connection_errors_automatically(self):
         class FakeClient:
             calls = 0
