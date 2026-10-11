@@ -11,6 +11,12 @@ import zipfile
 
 
 EXTERNAL_LINK = re.compile(r'^(?:https?:|mailto:)', re.I)
+ANCHOR_TOKEN = re.compile(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]')
+# Windows MAX_PATH (260) icinde kalmak icin: klasor + _python_translation/<dosya>/part-001.md
+FOLDER_STEM_CHARS = 60
+SLUG_CHARS = 60
+MAX_PATH_CHARS = 250
+WORK_SUFFIX = '/_python_translation//translation-draft.md'  # en uzun ic yol
 DECLARED_ENCODING = re.compile(rb"(?:encoding|charset)\s*=\s*[\"']?([A-Za-z0-9_.:-]+)", re.I)
 
 
@@ -45,6 +51,7 @@ class Markdown(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.out=[]; self.skip=0; self.pre=False; self.anchors={}
         self.document_path=document_path; self.links=[]; self.lists=[]; self.quote=0
+        self.targets=set()  # bu belgeden verilen EPUB ici baglanti hedefleri
         self.table=None; self.table_row=None; self.table_cell=None; self.table_header=False
 
     def _append(self, value):
@@ -127,6 +134,7 @@ class Markdown(HTMLParser):
                     self.links.append(None)
                 else:
                     key = path + (('#' + fragment) if fragment else '')
+                    self.targets.add(key)
                     self._append('['); self.links.append('epub-link:' + quote(key, safe='/-._~'))
             else:
                 self.links.append(None)
@@ -166,6 +174,30 @@ class Markdown(HTMLParser):
 
     def result(self):
         return tidy_markdown(''.join(self.out)).strip()+'\n'
+
+
+def tidy_anchors(text, referenced):
+    """Yalnizca bir baglantinin hedefi olan capalari birakir ve bunlari ayri
+    bloga tasir.
+
+    Kobo/Google Books gibi kaynaklar her cumleye/sayfaya hic baglanti almayan
+    ``id`` koyar; bunlar modele giden metni yuzlerce isaretle doldurur ve tek
+    biri bozulunca parca reddedilir. Gercek hedefler cumle icinden paragraf
+    basina alinir: model dusurse bile ``restore_missing_epub_anchors`` geri
+    koyabilir. Tablo satirlari bolunemeyecegi icin tablodaki capalar yerinde
+    kalir.
+    """
+    blocks = []
+    for block in re.split(r'\n[ \t]*\n', text):
+        block = ANCHOR_TOKEN.sub(lambda m: m.group(0) if unquote(m.group(1)) in referenced else '', block)
+        tokens = [m.group(0) for m in ANCHOR_TOKEN.finditer(block)]
+        rest = ANCHOR_TOKEN.sub('', block)
+        if tokens and rest.strip() and not rest.lstrip().startswith('|'):
+            blocks.append('\n'.join(tokens))
+            block = rest
+        if block.strip():
+            blocks.append(block.strip('\n'))
+    return '\n\n'.join(blocks)
 
 
 def local(tag):
@@ -229,9 +261,9 @@ def toc_entries(z, opf, manifest, package):
     return entries,'EPUB2 NCX' if entries else 'Spine fallback (TOC yok)'
 
 
-def chapter_files(z,opf,manifest,spine,package):
+def chapter_files(z,opf,manifest,spine,package,slug_chars=SLUG_CHARS):
     entries,mode=toc_entries(z,opf,manifest,package)
-    documents={};full='';starts=[]
+    documents={};full='';starts=[];referenced=set()
     for key in spine:
         item=manifest[key]
         if item.get('media-type') not in ('application/xhtml+xml','text/html'):continue
@@ -241,7 +273,7 @@ def chapter_files(z,opf,manifest,spine,package):
             # metni cift katlamak yerine tekrar listesini gec.
             continue
         parser=Markdown(path);parser.feed(decode_document(z.read(path),path))
-        raw=''.join(parser.out)
+        raw=''.join(parser.out); referenced|=parser.targets
         documents[path]=(len(full),parser.anchors)
         starts.append((len(full),PurePosixPath(path).stem))
         full+=raw+'\n\n'
@@ -264,13 +296,13 @@ def chapter_files(z,opf,manifest,spine,package):
     for index,(offset,label) in enumerate(ordered):
         end=ordered[index+1][0] if index+1<len(ordered) else len(full)
         text=full[offset:end]
-        text=tidy_markdown(text).strip()
+        text=tidy_anchors(tidy_markdown(text).strip(),referenced)
         text=re.sub(r'^#{1,6}\s*$', '', text, flags=re.M).strip()
         if not text:continue
         if entries:text='# '+label+'\n\n'+text
         import unicodedata
         slug=unicodedata.normalize('NFKD',label).encode('ascii','ignore').decode()
-        slug=re.sub(r'[^A-Za-z0-9]+','-',slug).strip('-')[:120] or 'Section'
+        slug=re.sub(r'[^A-Za-z0-9]+','-',slug).strip('-')[:slug_chars].strip('-') or 'Section'
         name=f'{len(result)+1:03d}-{slug}.md'
         result.append((name,text+'\n'))
         segments.append((offset,end,name))
@@ -294,20 +326,26 @@ def prepare(epub, workspace_parent=None):
     raw=epub.read_bytes(); fingerprint=hashlib.sha256(raw).hexdigest()
     parent=Path(workspace_parent).resolve() if workspace_parent else epub.parent
     parent.mkdir(parents=True,exist_ok=True)
-    base_book=parent/(epub.stem+'-ceviri')
+    stem=epub.stem
+    # Derin klasorlerde kitap adini da kisalt; bolum adlarina en az ~24 karakter kalsin.
+    room=MAX_PATH_CHARS-len(str(parent))-len(WORK_SUFFIX)-len('/-ceviri-99')-len('001-.md')
+    stem_chars=max(16,min(FOLDER_STEM_CHARS,room-24))
+    if len(stem)>stem_chars and not (parent/(stem+'-ceviri')).exists():
+        stem=stem[:stem_chars].rstrip(' .-_')  # eski uzun adli projeler bulunmaya devam etsin
+    base_book=parent/(stem+'-ceviri')
     book=base_book
     marker=book/'epub-import.json'
     if marker.exists() and json.loads(marker.read_text(encoding='utf-8')).get('import_version') not in (3,4):
         print('Eski parca duzeni korunuyor. Bolum duzeni icin ayri klasor olusturulacak.')
-        book=parent/(epub.stem+'-ceviri-bolumler')
+        book=parent/(stem+'-ceviri-bolumler')
         marker=book/'epub-import.json'
     if marker.exists():
         state=json.loads(marker.read_text(encoding='utf-8'))
         if state.get('sha256')==fingerprint and state.get('import_version') in (3,4):return book
     if book.exists():
         index=2
-        while (parent/(epub.stem+f'-ceviri-{index}')).exists():index+=1
-        book=parent/(epub.stem+f'-ceviri-{index}')
+        while (parent/(stem+f'-ceviri-{index}')).exists():index+=1
+        book=parent/(stem+f'-ceviri-{index}')
         marker=book/'epub-import.json'
     with zipfile.ZipFile(epub) as z:
         if any(i.file_size>50_000_000 for i in z.infolist()):raise ValueError('EPUB icinde 50 MB ustu oge var.')
@@ -323,7 +361,11 @@ def prepare(epub, workspace_parent=None):
         spine=[n.attrib['idref'] for n in package.iter() if n.tag.endswith('}itemref')]
         meta=lambda key:next((n.text or '' for n in package.iter() if n.tag.endswith('}'+key)), '')
         title=meta('title') or epub.stem; author=meta('creator')
-        chapters,mode,link_map=chapter_files(z,opf,manifest,spine,package)
+        # "001-<slug>.md" ve is klasoru Windows yol sinirina sigmali.
+        slug_chars=min(SLUG_CHARS,MAX_PATH_CHARS-len(str(book))-len(WORK_SUFFIX)-len('001-.md'))
+        if slug_chars<12:
+            raise ValueError('Calisma klasoru yolu cok uzun; daha kisa bir klasor secin: '+str(parent))
+        chapters,mode,link_map=chapter_files(z,opf,manifest,spine,package,slug_chars)
         print('Bolum kaynagi: '+mode,flush=True)
         if not chapters:raise ValueError('EPUB icinde okunabilir metin bulunamadi; taranmis kitap/OCR desteklenmiyor.')
     book.mkdir();(book/'source').mkdir();(book/'translation').mkdir()

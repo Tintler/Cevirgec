@@ -1707,6 +1707,27 @@ class ReviewFixTests(unittest.TestCase):
                 self.assertIn(f'id="{target_id}"', page2)
                 self.assertIn('My Cover(1).jpg', page1)
 
+    def test_unreferenced_anchors_dropped_and_targets_hoisted(self):
+        from epub_import import tidy_anchors
+        text = ('# [[EPUB_ANCHOR:OPS/c1.xhtml%23kobo.1.1]]Title\n\n'
+                'He said[[EPUB_ANCHOR:OPS/c1.xhtml%23ref1]] hi[[EPUB_ANCHOR:OPS/c1.xhtml%23page_4]].\n\n'
+                '[[EPUB_ANCHOR:OPS/c1.xhtml%23kobo.2.1]]\n\n'
+                '| A | B[[EPUB_ANCHOR:OPS/c1.xhtml%23t]] |\n| --- | --- |\n| 1 | 2 |')
+        result = tidy_anchors(text, {'OPS/c1.xhtml#ref1', 'OPS/c1.xhtml#t'})
+        self.assertEqual(result, '# Title\n\n[[EPUB_ANCHOR:OPS/c1.xhtml%23ref1]]\n\nHe said hi.\n\n'
+                                 '| A | B[[EPUB_ANCHOR:OPS/c1.xhtml%23t]] |\n| --- | --- |\n| 1 | 2 |')
+
+    def test_long_epub_name_fits_windows_path_limit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); work = root / ('w' * 80)
+            source = root / ('Very Long Light Novel Title ' * 5 + '.epub')
+            make_structured_epub(source)
+            book = prepare(source, work)
+            self.assertLessEqual(len(book.name), 60 + len('-ceviri'))
+            for path in (book / 'source').iterdir():
+                work_file = book / '_python_translation' / path.name / 'translation-draft.md'
+                self.assertLessEqual(len(str(work_file)), 250)
+
     def test_optional_epubcheck_jar_command(self):
         with tempfile.TemporaryDirectory() as temp:
             jar = Path(temp) / 'epubcheck.jar'; jar.write_bytes(b'jar')
