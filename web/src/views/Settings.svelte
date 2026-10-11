@@ -28,7 +28,8 @@
   load();
 
   const isLocked = (key) => locked.includes(key);
-  const models = $derived([...new Set([...(app.models.loaded ?? []).map((m) => m.name), cfg?.model].filter(Boolean))]);
+  const loadedNames = $derived(new Set((app.models.loaded ?? []).map((m) => m.name)));
+  const models = $derived([...new Set([...loadedNames, ...(app.models.available ?? []), cfg?.model].filter(Boolean))]);
 
   async function save() {
     saving = true;
@@ -73,10 +74,14 @@
           <input class="field w" bind:value={cfg.base_url} disabled={isLocked('base_url')} />
         </div>
         <div class="fr">
-          <div class="l">Model<small>LM Studio'nun yüklü bildirdiği modeller</small></div>
-          <select class="field w" bind:value={cfg.model} disabled={isLocked('model')}>
-            {#each models as m}<option value={m}>{m}</option>{/each}
-          </select>
+          <div class="l">Model<small>LM Studio'daki modeller; yüklü olmayan seçilirse ilk istekte yüklenir</small></div>
+          <div class="model-pick">
+            <select class="field w" bind:value={cfg.model} disabled={isLocked('model')}>
+              {#each models as m}<option value={m}>{m}{loadedNames.has(m) ? ' (yüklü)' : ''}</option>{/each}
+            </select>
+            <button class="icon-btn" title="Modelleri LM Studio'dan yeniden getir" disabled={app.models.state === 'probing'}
+              onclick={() => call('refresh_models')}><Icon name="refresh" size={16} /></button>
+          </div>
         </div>
       </div>
 
@@ -144,6 +149,8 @@
   .l small { display: block; color: var(--dim); font-size: 12px; }
   .field.w { width: 320px; }
   .field.n { width: 140px; }
+  .model-pick { display: flex; align-items: center; gap: 4px; }
+  .model-pick .field.w { width: 280px; }
   .warn { display: flex; gap: 8px; align-items: center; color: var(--warn); font-size: 12px; background: color-mix(in srgb, var(--warn) 10%, transparent); padding: 8px 12px; border-radius: 8px; margin: 4px 0 8px; }
   .seg { display: flex; background: var(--surface); border-radius: 999px; padding: 3px; }
   .seg button { display: inline-flex; gap: 6px; align-items: center; padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--secondary); }

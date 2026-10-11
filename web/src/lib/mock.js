@@ -32,7 +32,7 @@ export function createMock(emit) {
     save_ui_prefs: async (values) => (prefs = { ...prefs, ...values }),
     refresh_models: async () => {
       emit('models', { state: 'probing' });
-      setTimeout(() => emit('models', { state: 'ok', model: config.model, loaded: [{ name: config.model, context: 32768 }] }), 500);
+      setTimeout(() => emit('models', { state: 'ok', model: config.model, loaded: [{ name: config.model, context: 32768 }], available: [config.model, 'qwen3.6-35b-a3b', 'qwen/qwen3.5-9b'] }), 500);
       return true;
     },
     choose_epub: async () => { loadBook(); book.project = ''; return snapshot(); },

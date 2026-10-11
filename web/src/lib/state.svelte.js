@@ -8,7 +8,7 @@ export const app = $state({
   status: { runtime: 'idle', phase: 'Başlatılmadı', current: '', last_saved: '', progress: { done: 0, total: 0, percent: 0 } },
   analysis: '',
   log: [],
-  models: { state: 'probing', loaded: [], model: '', message: '' },
+  models: { state: 'probing', loaded: [], available: [], model: '', message: '' },
   review: null,
   // Translate screen view state, kept here so it survives switching tabs.
   translate: { tab: 'preview', selected: null, preAnalysis: false },

@@ -204,6 +204,36 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual((saved['config']['chunk_chars'], saved['config']['auto_retry_count']), (3000, 5))
         self.bridge._runtime = 'idle'
 
+    def test_refresh_models_lists_unloaded_models(self):
+        models = [
+            {'type': 'llm', 'key': 'gemma-4', 'loaded_instances': [{'id': 'gemma-4', 'config': {'context_length': 8192}}]},
+            {'type': 'llm', 'key': 'qwen3.6-35b-a3b', 'loaded_instances': []},
+            {'type': 'embedding', 'key': 'text-embedding-nomic', 'loaded_instances': []},
+        ]
+
+        class ModelClient:
+            def __init__(self, cfg, log=print):
+                pass
+
+            def model_info(self):
+                return None, models
+
+        recorder = Recorder()
+        self.bridge._emit = recorder
+        with patch.object(bridge, 'Client', ModelClient):
+            config = app_core.load_config()
+            config['model'] = 'qwen3.6-35b-a3b'
+            (self.app_dir / 'config.json').write_text(json.dumps(config), encoding='utf-8')
+            self.bridge.refresh_models()
+            event = recorder.wait_for('models')
+            while event.get('state') != 'ok':
+                time.sleep(0.05)
+                event = recorder.wait_for('models')
+        self.assertEqual(event['available'], ['gemma-4', 'qwen3.6-35b-a3b'])
+        self.assertEqual(event['model'], 'qwen3.6-35b-a3b')       # an unloaded choice is kept
+        self.assertIn('warn', self.bridge.model_check())
+        self.assertNotIn('block', self.bridge.model_check())
+
     def test_open_project_validates_folder(self):
         self.assertIn('error', self.bridge.open_project(str(self.root)))
         snapshot = self.prepare()

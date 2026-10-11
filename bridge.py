@@ -78,6 +78,7 @@ class Bridge:
         self._active_fraction = 0.0
         self._last_saved = ''
         self._loaded_models = []
+        self._available_models = []
         self._review_event = None
         self._review_values = None
         self._pending_close = None       # callable invoked once the worker stops
@@ -187,7 +188,8 @@ class Bridge:
         with self._lock:
             return {'book': self._book_card(), 'chapters': self._chapter_states(), 'status': self._status(),
                     'analysis': self._analysis_text(), 'model': load_config()['model'],
-                    'loaded_models': self._loaded_models}
+                    'loaded_models': self._loaded_models,
+                    'available_models': self._available_models}
 
     def ui_prefs(self):
         path = APP_DIR / UI_FILE
@@ -217,8 +219,11 @@ class Bridge:
             except Exception as error:
                 self._emit('models', {'state': 'failed', 'message': str(error), 'model': cfg['model']})
                 return
-            loaded = []
+            loaded, available = [], []
             for model in models:
+                if str(model.get('type', '')).startswith('embedding'):
+                    continue
+                available.append(model.get('key') or model.get('id'))
                 instances = model.get('loaded_instances') or []
                 for instance in instances:
                     context = instance.get('config', {}).get('context_length')
@@ -226,15 +231,20 @@ class Bridge:
                 if not instances and model.get('state') == 'loaded':
                     loaded.append({'name': model.get('id') or model.get('key'), 'context': model.get('max_context_length')})
             self._loaded_models = list(dict.fromkeys(item['name'] for item in loaded if item.get('name')))
+            self._available_models = list(dict.fromkeys(
+                [name for name in available if name] + self._loaded_models))
             current = load_config()
-            if len(self._loaded_models) == 1 and current['model'] != self._loaded_models[0]:
+            # Only replace the configured model when LM Studio no longer offers it at all;
+            # a model that is offered but not loaded is loaded on the first request.
+            if current['model'] not in self._available_models and self._loaded_models:
                 current['model'] = self._loaded_models[0]
                 try:
                     save_json(APP_DIR / 'config.json', current)
-                    self._log('LM Studio’da tek model yüklü olduğu için otomatik seçildi: ' + current['model'])
+                    self._log('Seçili model LM Studio’da bulunamadı; yüklü model seçildi: ' + current['model'])
                 except OSError:
-                    self._log('UYARI: Tek model otomatik seçildi fakat config.json yazılamadı. Ayarlardan modeli elle seçin.')
-            self._emit('models', {'state': 'ok', 'loaded': loaded, 'model': load_config()['model']})
+                    self._log('UYARI: Yüklü model otomatik seçildi fakat config.json yazılamadı. Ayarlardan modeli elle seçin.')
+            self._emit('models', {'state': 'ok', 'loaded': loaded, 'available': self._available_models,
+                                  'model': load_config()['model']})
 
         threading.Thread(target=probe, name='lmstudio-model-probe', daemon=True).start()
         return True
@@ -350,13 +360,17 @@ class Bridge:
         return self.snapshot()
 
     def model_check(self):
-        """Step 2: block when the configured model is not loaded, warn when LM Studio was unreachable."""
+        """Step 2: block when LM Studio does not offer the configured model, warn when it is not loaded yet
+        or LM Studio was unreachable."""
         configured = load_config()['model']
-        if self._loaded_models and configured not in self._loaded_models:
-            return {'block': 'Ayarlar bölümünden LM Studio’da yüklü modellerden birini seçin.'}
-        if not self._loaded_models:
-            return {'warn': 'LM Studio’da yüklü model listesi sorgulanamadı. Sunucunun açık ve modelin yüklü '
-                            'olduğunu doğrulayın; aksi hâlde çeviri istekleri başarısız olabilir.'}
+        if self._available_models and configured not in self._available_models:
+            return {'block': 'Ayarlar bölümünden LM Studio’nun sunduğu modellerden birini seçin.'}
+        if not self._available_models:
+            return {'warn': 'LM Studio model listesi sorgulanamadı. Sunucunun açık olduğunu doğrulayın; '
+                            'aksi hâlde çeviri istekleri başarısız olabilir.'}
+        if configured not in self._loaded_models:
+            return {'warn': f'{configured} şu an LM Studio’da yüklü değil; ilk istekte yüklenecek. '
+                            'Bu, modelin boyutuna göre biraz sürebilir.'}
         return {}
 
     def analysis_candidates(self):
@@ -587,6 +601,7 @@ class Bridge:
     # ------------------------------------------------------------------ settings
     def get_settings(self):
         return {'config': load_config(), 'defaults': DEFAULT_CONFIG, 'loaded_models': self._loaded_models,
+                'available_models': self._available_models,
                 'locked': list(LOCKED_WHILE_RUNNING) if self._runtime in ('running', 'pausing', 'paused', 'closing') else []}
 
     def save_settings(self, values):

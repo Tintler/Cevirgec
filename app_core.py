@@ -1163,6 +1163,13 @@ class Client:
             return self._context_cache
         try:
             info, _ = self.model_info()
+            if info and not info['loaded']:
+                self.log(f'Model yuklu degil, LM Studio\'ya yukletiliyor: {self.cfg["model"]}')
+                try:
+                    self.request('/api/v1/models/load', {'model': self.cfg['model']})
+                    info, _ = self.model_info()
+                except Exception as error:
+                    self.log(f'UYARI: Model yuklenemedi, ilk istekte yuklenmesi beklenecek: {error}')
             if info and info['context_length']:
                 self._context_cache = (int(info['context_length']), 'LM Studio yuklu model')
                 return self._context_cache

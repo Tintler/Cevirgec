@@ -68,7 +68,7 @@ LM Studio'da model yüklenmeli ve yerel sunucu başlatılmalıdır. Varsayılan 
 http://127.0.0.1:1234/v1
 ```
 
-Çevirgeç model keşfi için önce `/api/v1/models`, gerektiğinde `/api/v0/models`; çeviri ve analiz istekleri için `/api/v1/chat` kullanır. Tek model yüklüyse otomatik seçilir. Birden fazla model varsa açılır listeden seçim yapılır; model alanı serbest metin değildir.
+Çevirgeç model keşfi için önce `/api/v1/models`, gerektiğinde `/api/v0/models`; çeviri ve analiz istekleri için `/api/v1/chat` kullanır. LM Studio'daki tüm metin modelleri (embedding modelleri hariç) açılır listede gösterilir; yüklü olanlar "(yüklü)" diye işaretlenir. Yüklü olmayan bir model seçilirse çeviri başlarken LM Studio'ya yükletilir. Seçili model LM Studio'da hiç yoksa yüklü modellerden ilki otomatik seçilir. Model alanı serbest metin değildir.
 
 Sol alttaki LM Studio kartında bağlantı durumu, seçili model ve algılanabiliyorsa aktif context uzunluğu gösterilir. Karttaki yenile düğmesi sunucu durumunu ve model listesini yeniden sorgular.
 
