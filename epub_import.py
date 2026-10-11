@@ -64,12 +64,35 @@ class Markdown(HTMLParser):
     def _break(self):
         self._append('\n\n' + ('> ' if self.quote else ''))
 
+    @staticmethod
+    def _dialogue_table(rows, width):
+        """Basliksiz, iki sutunlu, ilk sutunu kisa ad olan tablo mu?"""
+        if width != 2 or any(header for _row, header in rows):
+            return False
+        names = [row[0].strip() for row, _header in rows if row]
+        names = [ANCHOR_TOKEN.sub('', name).strip() for name in names]
+        return any(names) and all(len(name) <= 30 for name in names)
+
     def _finish_table(self):
         rows = self.table or []
         self.table = None
         if not rows:
             return
         width = max(len(row) for row, _header in rows)
+        if self._dialogue_table(rows, width):
+            # Yayincilarin yerlesim icin kullandigi konusmaci|replik tablolari:
+            # model satir/ayirici kaydirarak tabloyu kolayca bozuyor; duz
+            # diyalog satiri olarak tasinir.
+            lines = []
+            for row, _header in rows:
+                name, text = (row + ['', ''])[:2]
+                anchors = ''.join(m.group(0) for m in ANCHOR_TOKEN.finditer(name))
+                name, text = ANCHOR_TOKEN.sub('', name).strip(), text.strip()
+                if name and not name.startswith('*'):
+                    name = '**' + name + '**'
+                lines.append(anchors + (name + ' ' + text).strip())
+            self.out.append('\n\n' + '\n'.join(line for line in lines if line) + '\n\n')
+            return
         normalized = []
         for row, header in rows:
             cells = row + [''] * (width - len(row))

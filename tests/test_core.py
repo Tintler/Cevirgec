@@ -1816,6 +1816,16 @@ class ReviewFixTests(unittest.TestCase):
         self.assertEqual(result, '# Title\n\n[[EPUB_ANCHOR:OPS/c1.xhtml%23ref1]]\n\nHe said hi.\n\n'
                                  '| A | B[[EPUB_ANCHOR:OPS/c1.xhtml%23t]] |\n| --- | --- |\n| 1 | 2 |')
 
+    def test_headerless_dialogue_table_becomes_dialogue_lines(self):
+        from epub_import import Markdown
+        parser = Markdown('OPS/c1.xhtml')
+        parser.feed('<p>Before.</p><table><tr><td>ME:</td><td>… Huh?</td></tr>'
+                    '<tr><td>Y-KO:</td><td>I mean, <i>Santas</i>.</td></tr><tr><td></td><td>Right?</td></tr></table>'
+                    '<table><tr><th>Name</th><th>Value</th></tr><tr><td>A</td><td>1</td></tr></table>')
+        markdown = parser.result()
+        self.assertIn('Before.\n\n**ME:** … Huh?\n**Y-KO:** I mean, *Santas*.\nRight?\n\n', markdown)
+        self.assertIn('| Name | Value |\n| --- | --- |\n| A | 1 |', markdown)
+
     def test_single_entry_toc_splits_by_spine(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); source = root / 'single.epub'
