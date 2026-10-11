@@ -351,11 +351,12 @@ def restore_missing_epub_anchors(source, translated):
     """Modelin dusurdugu bagimsiz EPUB capa bloklarini kaynak konumuna koyar.
 
     EPUB importer, blok duzeyindeki ``id``/``name`` hedeflerini kendi Markdown
-    paragrafinda tasir. Capa gorunur metin olmadigi icin ceviri modeline
-    birakilmasi gereksiz ve guvenilmezdir. Yalnizca kaynak ve cevirinin gorunur
-    blok sayilari esitken eksik capa bloklari geri eklenir. Degismis/fazladan
-    capa ya da metin icine gomulu capa otomatik duzeltilmez; normal yapisal
-    dogrulama bunlari reddeder.
+    paragrafinda tasir. Capa gorunur metin olmadigi icin bu bloklar modele hic
+    gonderilmez (``model_source``) ve burada geri eklenir. Gorunur blok sayilari
+    esitse capa ayni paragrafin onune, model paragraf birlestirip boldugunde
+    ayni parca icinde orantili konuma konur. Degismis/fazladan capa ya da metin
+    icine gomulu capa otomatik duzeltilmez; normal yapisal dogrulama bunlari
+    reddeder.
     """
     anchor_pattern = re.compile(r'\[\[EPUB_ANCHOR:([^\]]+)\]\]')
     source_anchors = Counter(anchor_pattern.findall(source))
@@ -385,9 +386,6 @@ def restore_missing_epub_anchors(source, translated):
     translated_blocks = blocks(translated)
     source_visible = [item for item in source_blocks if not anchor_only(item[2])]
     translated_visible = [item for item in translated_blocks if not anchor_only(item[2])]
-    if len(source_visible) != len(translated_visible):
-        return translated, 0
-
     insertions = []
     visible_before = 0
     remaining = missing.copy()
@@ -402,8 +400,11 @@ def restore_missing_epub_anchors(source, translated):
                 remaining[value] -= 1
         if not tokens:
             continue
-        if visible_before < len(translated_visible):
-            position = translated_visible[visible_before][0]
+        index = visible_before
+        if len(source_visible) != len(translated_visible):
+            index = round(visible_before * len(translated_visible) / max(1, len(source_visible)))
+        if index < len(translated_visible):
+            position = translated_visible[index][0]
             payload = '\n'.join(tokens) + '\n\n'
         else:
             position = len(translated.rstrip())
@@ -417,6 +418,46 @@ def restore_missing_epub_anchors(source, translated):
     for position, payload, _count in reversed(insertions):
         translated = translated[:position] + payload + translated[position:]
     return translated, sum(count for _position, _payload, count in insertions)
+
+
+def model_source(text):
+    """Modele gidecek metin: yalnizca capa tasiyan bloklar cikarilir.
+
+    Gorunur metni olmayan capa listeleri modele gittiginde numaralari kaydirip
+    olmayan capalar uydurabiliyor; bunlari ``restore_missing_epub_anchors``
+    ceviriden sonra kaynaktaki yerine geri koyar.
+    """
+    anchor_block = re.compile(r'(?:\[\[EPUB_ANCHOR:[^\]]+\]\]\s*)+')
+    blocks = [block.strip('\n') for block in re.split(r'\n[ \t]*\n', text)
+              if block.strip() and not anchor_block.fullmatch(block.strip())]
+    return '\n\n'.join(blocks) + ('\n' if blocks and text.endswith('\n') else '')
+
+
+def repair_link_openers(source, translated):
+    """Modelin dusurdugu ``[`` acilisini EPUB ici baglantilara geri ekler.
+
+    Uzun icindekiler listelerinde model bazen ``46. Baslik](epub-link:...)``
+    yaziyor. Yalnizca kaynakta olup ceviride eksik kalan hedefler, satir basi
+    (liste/baslik isaretinden sonra) ile ``](`` arasinda ``[`` yoksa onarilir.
+    """
+    missing = protected_epub_tokens(source)['ic baglanti'] - protected_epub_tokens(translated)['ic baglanti']
+    if not missing:
+        return translated, 0
+    lines = translated.split('\n')
+    repaired = 0
+    for number, line in enumerate(lines):
+        for target in list(missing):
+            closing = line.find('](' + target + ')')
+            if closing < 0 or missing[target] <= 0:
+                continue
+            prefix = re.match(r'[ \t]*(?:>[ \t]*)*(?:#{1,6}[ \t]+|\d+\.[ \t]+|[-*+][ \t]+)?', line).end()
+            if '[' in line[prefix:closing]:
+                continue
+            line = line[:prefix] + '[' + line[prefix:]
+            missing[target] -= 1
+            repaired += 1
+        lines[number] = line
+    return '\n'.join(lines), repaired
 
 
 def image_only_source(text):
@@ -1530,15 +1571,23 @@ class TranslationEngine:
             self.controller.checkpoint()
             self.progress(filename=filename, part=index + 1, parts=len(chunks), phase='translation')
             self.log(f'Ceviri {index + 1}/{len(chunks)} — yanit bekleniyor...')
+            prompt_chunk = model_source(chunks[index])
+            if not prompt_chunk.strip():
+                # Yalnizca capa tasiyan parca: cevrilecek metin yok.
+                state['parts'].append(chunks[index].strip('\n'))
+                save_json(state_path, state)
+                atomic(work / f'part-{index + 1:03}.md', state['parts'][-1] + '\n')
+                self.log(f'Parca {index + 1} yalnizca EPUB capasi tasiyor; modele gonderilmeden kaydedildi.')
+                continue
             previous = state['parts'][-1][-1800:] if state['parts'] else '(Yok)'
-            user = f'BOOK REFERENCE DATA:\n{reference}\n\nMANDATORY USER GLOSSARY:\n{glossary_text(glossary)}\n\nPREVIOUS TRANSLATION END:\n{previous}\n\nSOURCE TO TRANSLATE — PART {index + 1}/{len(chunks)}:\n{chunks[index]}'
-            require_marker = translation_requires_completion_marker(chunks[index], cfg)
+            user = f'BOOK REFERENCE DATA:\n{reference}\n\nMANDATORY USER GLOSSARY:\n{glossary_text(glossary)}\n\nPREVIOUS TRANSLATION END:\n{previous}\n\nSOURCE TO TRANSLATE — PART {index + 1}/{len(chunks)}:\n{prompt_chunk}'
+            require_marker = translation_requires_completion_marker(prompt_chunk, cfg)
             if not require_marker:
                 if cfg['completion_marker_enabled']:
                     reason = f'isaretsiz kabul siniri={cfg["completion_marker_exempt_chars"]}'
                 else:
                     reason = 'bitis isareti denetimi kapali'
-                self.log(f'Parca {len(chunks[index].strip())} karakter ({reason}): '
+                self.log(f'Parca {len(prompt_chunk.strip())} karakter ({reason}): '
                          'cikti ve EPUB yapi denetimleri kullaniliyor.')
             retry_count = int(cfg['auto_retry_count'])
             for attempt in range(retry_count + 1):
@@ -1551,7 +1600,10 @@ class TranslationEngine:
                         require_marker=require_marker,
                     )
                     translated = self._enforce_glossary(
-                        client, chunks[index], translated, glossary, int(cfg['max_tokens']))
+                        client, prompt_chunk, translated, glossary, int(cfg['max_tokens']))
+                    translated, repaired_links = repair_link_openers(chunks[index], translated)
+                    if repaired_links:
+                        self.log(f'Modelin dusurdugu baglanti acilisi "[" onarildi: {repaired_links}')
                     translated, restored_anchors = restore_missing_epub_anchors(chunks[index], translated)
                     if restored_anchors:
                         self.log(

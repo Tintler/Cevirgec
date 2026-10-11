@@ -1648,14 +1648,52 @@ class ReviewFixTests(unittest.TestCase):
             self.assertIn(anchor, translated)
             self.assertTrue(any('otomatik geri yerlestirildi: 1' in line for line in logs))
 
-    def test_ambiguous_or_changed_epub_anchor_is_not_silently_repaired(self):
+    def test_merged_paragraphs_place_anchor_proportionally_but_changed_is_rejected(self):
         source = 'First.\n\n[[EPUB_ANCHOR:OPS/c1.xhtml%23a]]\n\nSecond.'
         merged = 'Birinci ve ikinci paragraf birleştirildi.'
-        self.assertEqual(restore_missing_epub_anchors(source, merged), (merged, 0))
+        restored, count = restore_missing_epub_anchors(source, merged)
+        self.assertEqual(count, 1)
+        validate_translation_structure(source, restored)
         changed = 'Birinci.\n\n[[EPUB_ANCHOR:OPS/c1.xhtml%23b]]\n\nİkinci.'
         self.assertEqual(restore_missing_epub_anchors(source, changed), (changed, 0))
         with self.assertRaisesRegex(ValueError, 'Yapisal EPUB'):
             validate_translation_structure(source, changed)
+
+    def test_anchor_only_blocks_never_reach_the_model(self):
+        anchors = '[[EPUB_ANCHOR:OPS/toc.xhtml%23c1]]\n[[EPUB_ANCHOR:OPS/toc.xhtml%23c2]]'
+        source = '# Contents\n\n' + anchors + '\n\nText.\n'
+        self.assertEqual(app_core.model_source(source), '# Contents\n\nText.\n')
+        self.assertEqual(app_core.model_source(anchors), '')
+
+        class Recorder:
+            prompts = []
+            def __init__(self, cfg, log=print): self.cfg = cfg
+            def context_length(self): return 32768, 'test'
+            def generate(self, system, user, max_tokens, require_marker=True, allow_json_fence=False):
+                if 'SOURCE TO TRANSLATE' in user:
+                    Recorder.prompts.append(user)
+                    return '# İçindekiler\n\nMetin.'
+                return '- Not.'
+
+        with tempfile.TemporaryDirectory() as temp:
+            book = make_book(temp, [('001.md', 'next')], notes=False)
+            (book / 'source' / '001.md').write_text(source, encoding='utf-8')
+            with patch('app_core.Client', Recorder):
+                self.engine([]).run_file(book, '001.md')
+            self.assertNotIn('EPUB_ANCHOR', Recorder.prompts[0])
+            translated = (book / 'translation' / '001.md').read_text(encoding='utf-8')
+            self.assertEqual(translated, '# İçindekiler\n\n' + anchors + '\n\nMetin.\n')
+
+    def test_dropped_link_opening_bracket_is_repaired(self):
+        source = ('45. [ONE](epub-link:OPS/c45.xhtml)\n46. [*TWO*](epub-link:OPS/c46.xhtml)\n'
+                  '- [THREE](epub-link:OPS/c47.xhtml)')
+        translated = ('45. [BİR](epub-link:OPS/c45.xhtml)\n46. *İKİ*](epub-link:OPS/c46.xhtml)\n'
+                      '- ÜÇ](epub-link:OPS/c47.xhtml)')
+        repaired, count = app_core.repair_link_openers(source, translated)
+        self.assertEqual(count, 2)
+        self.assertIn('46. [*İKİ*](epub-link:OPS/c46.xhtml)', repaired)
+        self.assertIn('- [ÜÇ](epub-link:OPS/c47.xhtml)', repaired)
+        validate_translation_structure(source, repaired)
 
     def test_image_only_chapter_is_copied_without_model_request(self):
         class NoRequestClient:
