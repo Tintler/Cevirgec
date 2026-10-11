@@ -34,6 +34,10 @@ OPTIONS = {
                '--exclude-module', 'fastapi', '--exclude-module', 'voxcpm.training', '--exclude-module', 'tensorboardX'],
 }
 EXCLUDE = ['PySide6', 'webview', 'tkinter', 'matplotlib', 'IPython', 'pytest']
+# Modules newer scipy (1.16+) loads in ways the bundled hooks miss: array_api_compat imports its .fft/.linalg
+# submodules with __import__(name) (it moved from scipy._lib to scipy._external, the hook still names the old
+# path), and the Cython extensions import scipy._cyutility. Missing either breaks loading the engine.
+COMMON = ['--collect-submodules', 'scipy._external.array_api_compat', '--hidden-import', 'scipy._cyutility']
 
 
 def bundle_licenses(output):
@@ -64,7 +68,7 @@ def build(folder):
                '--specpath', str(work), '--paths', str(ROOT), '--hidden-import', 'engines.protocol']
     for module in EXCLUDE:
         command += ['--exclude-module', module]
-    command += OPTIONS.get(folder.name, [])
+    command += COMMON + OPTIONS.get(folder.name, [])
     command.append(str(folder / 'worker.py'))
     print('==>', engine_id, flush=True)
     subprocess.run(command, check=True, cwd=ROOT)
