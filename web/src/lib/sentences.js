@@ -2,7 +2,7 @@
 // so read-aloud can highlight the sentence being spoken and jump to a clicked one. Returns the sentences
 // and `breaks`, the indices of sentences that end a block (paragraph, heading, list item…).
 // With `quotes` on, a quotation of up to `maxQuoted` sentences stays one piece, so the voice reads
-// '"Sevgili Gandalf! Bir saniye!" diye bağırdı.' in one go.
+// '"Bekle! Hemen geliyorum!" diye seslendi.' in one go.
 
 const BLOCK = 'p,h1,h2,h3,h4,h5,h6,li,td,th,figcaption,dt,dd,blockquote,pre,div,aside,section,article,header,footer';
 const ABBREVIATIONS = new Set([

@@ -239,7 +239,7 @@
     </div>
   {/if}
   <div class="fr">
-    <div class="l">Tırnak içini bölme<small>Tırnak içindeki konuşma (ör. "Sevgili Gandalf! Bir saniye!") tek parça okunur; vurgulama da
+    <div class="l">Tırnak içini bölme<small>Tırnak içindeki konuşma (ör. "Bekle! Hemen geliyorum!") tek parça okunur; vurgulama da
       tek parça olur. Okuyucuya dönünce geçerli olur; değişen paragrafların hazırlanan sesleri yeniden üretilir.</small></div>
     <Toggle bind:checked={() => split.quotes, (quotes) => setSplit({ quotes })} />
   </div>
