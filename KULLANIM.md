@@ -140,7 +140,7 @@ Yeniden çeviri yalnızca seçilen bölümü işler. Tamamlandığında `TAM-CEV
 - Kapağa tıklayınca kitap kaldığı yerden açılır. Kitaplığın üstündeki **Okumaya devam et** alanı en son okunan, bitmemiş kitabı gösterir. Kitabı kaldırmak için kapağın köşesindeki × düğmesini ya da sağ tık menüsünü kullanın; dosyanın kendisi silinmez. Taşınmış veya silinmiş dosyalar soluk gösterilir.
 - Okuyucuda soldaki panel **İçindekiler** ve **Yer imleri** arasında geçiş yapar. Üstteki yer imi düğmesi bulunduğunuz konumu işaretler veya işareti kaldırır.
 - **Görünüm** (T simgesi) ile yazı boyutu, yazı tipi (serif/sans), satır aralığı, sütun genişliği ve sayfa rengi (tema, koyu, sepya, açık) seçilir; tercih tüm kitaplar için saklanır.
-- Bölümler arasında alttaki oklarla, bölüm sonundaki **Sonraki bölüm** düğmesiyle ya da `Alt+←` / `Alt+→` ile geçilir. Alt çubuk kitap genelindeki ilerlemeyi gösterir.
+- Bölümler arasında alttaki oklarla, bölüm başı ve sonundaki **Önceki bölüm** / **Sonraki bölüm** düğmeleriyle, `Alt+←` / `Alt+→` ile ya da bölümün sonunda (veya başında) kaydırmaya devam ederek geçilir. Geri kaydırınca önceki bölüm sonundan açılır, okuma kesintisiz sürer. Alt çubuk kitap genelindeki ilerlemeyi gösterir.
 - Kitaplar uygulamanın kendi yazı tipi ve renkleriyle gösterilir. Yayıncının CSS'i, betikleri ve dış kaynakları uygulanmaz; içerik güvenli bir HTML alt kümesine dönüştürülür. Kitap içindeki web bağlantıları sistem tarayıcısında açılır.
 
 ## Sesli okuma

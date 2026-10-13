@@ -36,6 +36,7 @@
   async function load(number, { offset = 0, anchor = '', continueReading = false } = {}) {
     if (!book || number < 0 || number >= sectionCount) return;
     if (player.active && !continueReading) stop();
+    resetPull();
     savePosition(true);
     loading = true;
     const result = await act('reader_section', book.id, number);
@@ -228,6 +229,33 @@
     }
   }
 
+  // ---- scrolling on past either end of a chapter opens the next (or previous) one
+  const PULL = 400;                   // extra wheel travel (px) needed at the edge
+  let pull = $state({ dir: 0, amount: 0 });
+  let pullTimer = null;
+  let pullBlockedUntil = 0;
+
+  function resetPull() {
+    clearTimeout(pullTimer);
+    if (pull.dir) pull = { dir: 0, amount: 0 };
+  }
+
+  function onWheel(event) {
+    if (loading || event.ctrlKey || performance.now() < pullBlockedUntil) return;
+    const dy = event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? pageWrap.clientHeight : 1);
+    const dir = Math.sign(dy);
+    const atEdge = dir > 0 ? pageWrap.scrollTop + pageWrap.clientHeight >= pageWrap.scrollHeight - 2 : pageWrap.scrollTop <= 0;
+    const target = section + dir;
+    if (!dir || !atEdge || target < 0 || target >= sectionCount) { resetPull(); return; }
+    const amount = Math.min(1, (pull.dir === dir ? pull.amount : 0) + Math.abs(dy) / PULL);
+    pull = { dir, amount };
+    clearTimeout(pullTimer);
+    if (amount < 1) { pullTimer = setTimeout(resetPull, 700); return; }
+    // Backwards lands at the end of the previous chapter so the text reads on continuously.
+    pullBlockedUntil = Infinity;
+    load(target, { offset: dir > 0 ? 0 : 1 }).finally(() => { pullBlockedUntil = performance.now() + 600; });
+  }
+
   function visibleSnippet() {
     const top = pageWrap.getBoundingClientRect().top;
     const block = [...pageWrap.querySelectorAll('article p, article h1, article h2, article h3, article li')]
@@ -354,15 +382,21 @@
         </nav>
       {/if}
 
-      <div class="page-wrap" bind:this={pageWrap} onscroll={() => savePosition()}
+      <div class="page-wrap" bind:this={pageWrap} onscroll={() => savePosition()} onwheel={onWheel}
         style:--paper={paper ? paper.bg : 'var(--panel)'} style:--ink={paper ? paper.ink : 'var(--text)'}>
+        {#if html && section > 0}
+          <button class="chapter-nav prev" style:--pull={pull.dir < 0 ? pull.amount : 0} onclick={() => load(section - 1)}>
+            <Icon name="back" size={16} /> Önceki bölüm</button>
+        {/if}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
         <article class="page selectable" class:faded={loading} class:listening={player.active} bind:this={article} onclick={onPageClick}
           style:font-size="{app.reader.size}px" style:line-height={app.reader.leading}
           style:font-family={fonts[app.reader.font]} style:max-width="{app.reader.width}px">
           {@html html}
           {#if html && section < sectionCount - 1}
-            <button class="next-section" onclick={() => load(section + 1)}>Sonraki bölüm <Icon name="forward" size={16} /></button>
+            <button class="chapter-nav next" style:--pull={pull.dir > 0 ? pull.amount : 0} onclick={() => load(section + 1)}>
+              Sonraki bölüm <Icon name="forward" size={16} /></button>
+            <div class="pull-hint no-tts">ya da kaydırmaya devam edin</div>
           {:else if html}
             <div class="the-end no-tts">Kitabın sonu</div>
           {/if}
@@ -472,9 +506,14 @@
   .page :global(.align-right) { text-align: right; text-indent: 0; }
   .page :global(sup) { line-height: 0; }
   .page :global([data-note]) { font-size: .85em; opacity: .85; }
-  .next-section { display: flex; align-items: center; gap: 6px; margin: 48px auto 0; padding: 10px 18px; border-radius: 999px;
-    background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); font: 600 14px var(--sans); }
-  .next-section:hover { background: color-mix(in srgb, var(--ink) 16%, transparent); }
+  /* --pull (0..1) fills the button while the reader scrolls on past the chapter's edge. */
+  .chapter-nav { display: flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 999px; color: var(--ink); font: 600 14px var(--sans);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 35%, transparent) calc(var(--pull, 0) * 100%), color-mix(in srgb, var(--ink) var(--tint, 10%), transparent) 0); }
+  .chapter-nav:hover { --tint: 16%; }
+  .chapter-nav.next { margin: 48px auto 0; }
+  .chapter-nav.prev { margin: 24px auto -24px; padding: 7px 14px; font-size: 13px; opacity: .75; }
+  .chapter-nav.prev:hover { opacity: 1; }
+  .pull-hint { text-align: center; margin-top: 8px; font: 12px var(--sans); opacity: .45; }
   .the-end { text-align: center; margin-top: 48px; font: 600 13px var(--sans); letter-spacing: .12em; text-transform: uppercase; opacity: .5; }
 
   .page.listening :global(.s) { cursor: pointer; border-radius: 3px; }
