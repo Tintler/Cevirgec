@@ -5,6 +5,7 @@
   import { confirm } from '../lib/confirm.svelte.js';
   import Toggle from './Toggle.svelte';
   import { PAUSE_KEYS, PAUSE_PRESETS, PAUSE_DEFAULTS, resolvePauses } from '../lib/pauses.js';
+  import { QUOTE_DEFAULTS } from '../lib/sentences.js';
 
   const LANGUAGES = { tr: 'Ses' };
   const DEFAULT_ENGINE = { tr: 'ema-lightning' };
@@ -86,6 +87,14 @@
   // Moving a slider turns the shown values (a preset's, perhaps) into custom ones.
   function setPause(key, value, save) {
     setPauses({ ...(PAUSE_PRESETS[pausePrefs.preset] ? pauses : {}), preset: 'custom', [key]: value }, save);
+  }
+
+  // How chapters are cut into sentences; applies when a chapter is (re)opened in the reader.
+  const split = $derived({ ...QUOTE_DEFAULTS, ...(app.ttsPrefs.split ?? {}) });
+
+  function setSplit(change, save = true) {
+    app.ttsPrefs.split = { ...split, ...change };
+    if (save) saveTtsPrefs();
   }
 
   const seconds = (value) => `${value.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sn`;
@@ -227,6 +236,20 @@
     <div class="fr sub">
       <div class="l">Hızla birlikte kısalt<small>Hızlı okurken duraklamalar da aynı oranda kısalır.</small></div>
       <Toggle bind:checked={() => pauses.scale, (scale) => setPauses({ scale })} />
+    </div>
+  {/if}
+  <div class="fr">
+    <div class="l">Tırnak içini bölme<small>Tırnak içindeki konuşma (ör. "Sevgili Gandalf! Bir saniye!") tek parça okunur; vurgulama da
+      tek parça olur. Okuyucuya dönünce geçerli olur; değişen paragrafların hazırlanan sesleri yeniden üretilir.</small></div>
+    <Toggle bind:checked={() => split.quotes, (quotes) => setSplit({ quotes })} />
+  </div>
+  {#if split.quotes}
+    <div class="fr sub">
+      <div class="l">En uzun alıntı<small>Daha uzun alıntılar her zamanki gibi cümle cümle bölünür; kapanmayan bir tırnak en fazla paragraf sonuna kadar etkiler.</small></div>
+      <input class="range" type="range" min="2" max="8" step="1" value={split.maxQuoted} aria-label="En uzun alıntı"
+        oninput={(e) => setSplit({ maxQuoted: Number(e.currentTarget.value) }, false)}
+        onchange={(e) => setSplit({ maxQuoted: Number(e.currentTarget.value) })} />
+      <span class="dim-text num">{split.maxQuoted} cümle</span>
     </div>
   {/if}
 </div>

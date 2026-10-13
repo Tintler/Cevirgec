@@ -1,6 +1,8 @@
 // Splits a rendered chapter into sentences and wraps each one in <span class="s" data-i="n">,
 // so read-aloud can highlight the sentence being spoken and jump to a clicked one. Returns the sentences
 // and `breaks`, the indices of sentences that end a block (paragraph, heading, list item…).
+// With `quotes` on, a quotation of up to `maxQuoted` sentences stays one piece, so the voice reads
+// '"Sevgili Gandalf! Bir saniye!" diye bağırdı.' in one go.
 
 const BLOCK = 'p,h1,h2,h3,h4,h5,h6,li,td,th,figcaption,dt,dd,blockquote,pre,div,aside,section,article,header,footer';
 const ABBREVIATIONS = new Set([
@@ -10,12 +12,40 @@ const ABBREVIATIONS = new Set([
 ]);
 const END = /[.!?…]+["'”’»)\]]*(?=\s|$)/g;
 const LETTER = /\p{L}/u;
+const OPENS_AFTER = /[\s([{—–-]/;
+export const QUOTE_DEFAULTS = { quotes: true, maxQuoted: 4 };
 
-function sentenceRanges(text) {
+// Double-quoted spans of one block as [open, close] indices (close = text.length when never closed).
+// A straight " opens after a space or the block start and closes otherwise; single quotes are never
+// used, Turkish writes them as apostrophes (Frodo'nun).
+function quoteSpans(text) {
+  const spans = [];
+  let open = -1;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const opening = c === '“' || c === '«' || (c === '"' && (i === 0 || OPENS_AFTER.test(text[i - 1])));
+    const closing = c === '”' || c === '»' || (c === '"' && !opening);
+    if (opening && open < 0) open = i;
+    else if (closing && open >= 0) { spans.push([open, i]); open = -1; }
+  }
+  if (open >= 0) spans.push([open, text.length]);
+  return spans;
+}
+
+// Spans short enough to keep together: at most `max` sentence ends inside, counting the closing one.
+function keptQuotes(text, max) {
+  const ends = [...text.matchAll(END)].map((m) => m.index);
+  return quoteSpans(text).filter(([open, close]) => ends.filter((i) => i > open && i <= close).length <= max);
+}
+
+function sentenceRanges(text, options) {
   const ranges = [];
+  const kept = options.quotes ? keptQuotes(text, options.maxQuoted) : [];
   let start = 0;
   for (const match of text.matchAll(END)) {
     const end = match.index + match[0].length;
+    // Inside a kept quotation: the cut waits for the closing quote ('!"' ends the match past it).
+    if (kept.some(([open, close]) => match.index > open && end <= close)) continue;
     const next = text.slice(end).trimStart()[0] ?? '';
     // A lower-case continuation does not end a sentence: '"Gelir misin?" diye sordu.' is one.
     if (LETTER.test(next) && next !== next.toLocaleUpperCase('tr')) continue;
@@ -37,7 +67,7 @@ function sentenceRanges(text) {
     .filter(([a, b]) => b > a && LETTER.test(text.slice(a, b)));
 }
 
-export function segment(root) {
+export function segment(root, options = QUOTE_DEFAULTS) {
   const groups = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) => (node.parentElement?.closest('.no-tts, button') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
@@ -60,7 +90,7 @@ export function segment(root) {
       return span;
     });
     const text = group.nodes.map((node) => node.data).join('');
-    for (const [a, b] of sentenceRanges(text)) {
+    for (const [a, b] of sentenceRanges(text, { ...QUOTE_DEFAULTS, ...options })) {
       const index = sentences.length;
       sentences.push(text.slice(a, b).replace(/\s+/g, ' '));
       for (const [start, end, node] of spans) {

@@ -4,7 +4,7 @@
   import { app, act, toast, saveReaderPrefs, saveTtsPrefs, READER_DEFAULTS } from '../lib/state.svelte.js';
   import { call } from '../lib/api.js';
   import { confirm } from '../lib/confirm.svelte.js';
-  import { segment } from '../lib/sentences.js';
+  import { segment, QUOTE_DEFAULTS } from '../lib/sentences.js';
   import { player, play, pause, resume, stop, step, setSpeed, setSentences, setHooks, setPauses } from '../lib/player.svelte.js';
   import { resolvePauses, pauseAfter } from '../lib/pauses.js';
 
@@ -53,13 +53,15 @@
     const target = anchor ? pageWrap.querySelector(`[id="${CSS.escape(anchor)}"]`) : null;
     if (target) target.scrollIntoView({ block: 'start' });
     else pageWrap.scrollTop = offset * Math.max(0, pageWrap.scrollHeight - pageWrap.clientHeight);
-    ({ sentences, breaks } = segment(article));
+    ({ sentences, breaks } = segment(article, splitOptions()));
     setSentences(sentences, { book: book.id, language: book.language || 'tr', breaks });
     refreshCached();
     savePosition(true);
   }
 
   // ---- read aloud
+
+  const splitOptions = () => ({ ...QUOTE_DEFAULTS, ...(app.ttsPrefs.split ?? {}) });
 
   $effect(() => setPauses(resolvePauses(app.ttsPrefs.pauses)));
   function highlight(index) {
@@ -168,7 +170,7 @@
         if (!result || result.error) continue;
         const holder = document.createElement('div');
         holder.innerHTML = result.html;
-        list.push(...segment(holder).sentences);
+        list.push(...segment(holder, splitOptions()).sentences);
       }
     }
     if (!list.length) { toast('Hazırlanacak metin yok.'); return; }
