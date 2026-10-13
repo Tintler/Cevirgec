@@ -1,5 +1,6 @@
 // Splits a rendered chapter into sentences and wraps each one in <span class="s" data-i="n">,
-// so read-aloud can highlight the sentence being spoken and jump to a clicked one.
+// so read-aloud can highlight the sentence being spoken and jump to a clicked one. Returns the sentences
+// and `breaks`, the indices of sentences that end a block (paragraph, heading, list item…).
 
 const BLOCK = 'p,h1,h2,h3,h4,h5,h6,li,td,th,figcaption,dt,dd,blockquote,pre,div,aside,section,article,header,footer';
 const ABBREVIATIONS = new Set([
@@ -49,6 +50,7 @@ export function segment(root) {
   }
 
   const sentences = [];
+  const breaks = new Set();
   const pieces = [];   // [node, start, end, index], wrapped afterwards
   for (const group of groups) {
     let offset = 0;
@@ -66,6 +68,7 @@ export function segment(root) {
         if (to > from) pieces.push([node, from - start, to - start, index]);
       }
     }
+    if (sentences.length) breaks.add(sentences.length - 1);
   }
   // Wrap from the end so earlier offsets in the same text node stay valid.
   for (let i = pieces.length - 1; i >= 0; i--) {
@@ -78,5 +81,5 @@ export function segment(root) {
     span.dataset.i = index;
     range.surroundContents(span);
   }
-  return sentences;
+  return { sentences, breaks };
 }

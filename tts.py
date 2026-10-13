@@ -41,6 +41,14 @@ def language_key(language):
     return str(language or 'tr').split('-')[0].split('_')[0].lower() or 'tr'
 
 
+def _gap(gaps, index):
+    """Seconds of silence after sentence `index`: the given one (clamped to 0–5 s) or SENTENCE_GAP."""
+    try:
+        return min(5.0, max(0.0, float(gaps[index])))
+    except (IndexError, TypeError, ValueError):
+        return SENTENCE_GAP
+
+
 class Worker:
     """One engine process: request/response over stdin/stdout, events forwarded to `on_event`."""
 
@@ -375,15 +383,18 @@ class Engines:
         shutil.rmtree(target, ignore_errors=True)
         return self.cache_info()
 
-    def export(self, sentences, speed, path, progress=None, book=None, language='tr'):
-        """Writes all sentences into one WAV file, reusing (and filling) the book's cache; blocking."""
-        texts = [' '.join(str(s).split()) for s in sentences if str(s).strip()]
+    def export(self, sentences, speed, path, progress=None, book=None, language='tr', gaps=None):
+        """Writes all sentences into one WAV file, reusing (and filling) the book's cache; blocking.
+        `gaps` gives the seconds of silence after each sentence (default SENTENCE_GAP)."""
+        gaps = list(gaps or ())
+        pairs = [(' '.join(str(s).split()), _gap(gaps, i)) for i, s in enumerate(sentences) if str(s).strip()]
+        texts = [text for text, _ in pairs]
         if not texts:
             raise ValueError('Kaydedilecek metin yok.')
         self._exporting = True
         stream = None
         try:
-            for index, text in enumerate(texts):
+            for index, (text, gap) in enumerate(pairs):
                 result = self.say(text, speed, book, language)
                 with wave.open(io.BytesIO(base64.b64decode(result['audio']))) as clip:
                     if stream is None:
@@ -393,7 +404,7 @@ class Engines:
                         stream.setsampwidth(2)
                         stream.setframerate(rate)
                     stream.writeframes(clip.readframes(clip.getnframes()))
-                    stream.writeframes(b'\x00\x00' * int(rate * SENTENCE_GAP))
+                    stream.writeframes(b'\x00\x00' * int(rate * gap))
                 if progress:
                     progress(index + 1, len(texts))
         finally:

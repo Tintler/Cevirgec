@@ -131,6 +131,10 @@ class EnginesTests(unittest.TestCase):
         with wave.open(str(path)) as clip:
             self.assertEqual(clip.getframerate(), 48000)
             self.assertAlmostEqual(clip.getnframes() / 48000, 2 * (0.2 + 0.35), places=2)
+        # Per-sentence silence; a skipped blank sentence takes its own gap with it.
+        self.engines.export(['Bir.', ' ', 'İki.'], 1.0, path, language='en', gaps=[0.5, 9, 0])
+        with wave.open(str(path)) as clip:
+            self.assertAlmostEqual(clip.getnframes() / 48000, 0.2 + 0.5 + 0.2, places=2)
         self.assertEqual(self.load('de')['state'], 'missing')
 
     def test_voice_options_reach_the_engine_and_reload_it(self):

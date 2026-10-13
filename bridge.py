@@ -792,9 +792,10 @@ class Bridge:
     def tts_remove(self, engine_id):
         return self._reading(self._engines().remove, engine_id)
 
-    def tts_export(self, title, sentences, speed=1.0, book=None, language='tr'):
+    def tts_export(self, title, sentences, speed=1.0, book=None, language='tr', gaps=None):
         """Asks where to save, then writes the section as one WAV file on a background thread
-        (prepared sentences come from the cache; the rest needs the engine)."""
+        (prepared sentences come from the cache; the rest needs the engine). `gaps`: seconds of
+        silence after each sentence, as the reader plays them."""
         engines = self._engines()
         texts = [text for text in sentences if str(text).strip()]
         if engines.state != 'ready' and engines.cached(book, texts, speed, language or 'tr') < len(texts):
@@ -812,7 +813,7 @@ class Bridge:
             try:
                 count = engines.export(sentences, speed, path,
                                        lambda done, total: self._emit('tts_export', {'done': done, 'total': total}),
-                                       book, language or 'tr')
+                                       book, language or 'tr', gaps)
                 self._emit('tts_export', {'finished': True, 'path': str(path), 'count': count})
             except Exception as error:
                 self._emit('tts_export', {'finished': True, 'error': str(error)})

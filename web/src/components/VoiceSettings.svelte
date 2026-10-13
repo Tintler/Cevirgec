@@ -3,6 +3,8 @@
   import { app, act, toast, saveTtsPrefs } from '../lib/state.svelte.js';
   import { call } from '../lib/api.js';
   import { confirm } from '../lib/confirm.svelte.js';
+  import Toggle from './Toggle.svelte';
+  import { PAUSE_KEYS, PAUSE_PRESETS, PAUSE_DEFAULTS, resolvePauses } from '../lib/pauses.js';
 
   const LANGUAGES = { tr: 'Ses' };
   const DEFAULT_ENGINE = { tr: 'ema-lightning' };
@@ -70,6 +72,23 @@
   }
 
   const megabytes = (bytes) => (bytes / 1e6).toLocaleString('tr-TR', { maximumFractionDigits: bytes > 1e9 ? 0 : 1 });
+
+  // Silence between sentences: a preset, or custom values from the details.
+  const pausePrefs = $derived({ ...PAUSE_DEFAULTS, ...(app.ttsPrefs.pauses ?? {}) });
+  const pauses = $derived(resolvePauses(app.ttsPrefs.pauses));
+  let pauseDetails = $state(false);
+
+  function setPauses(change, save = true) {
+    app.ttsPrefs.pauses = { ...pausePrefs, ...change };
+    if (save) saveTtsPrefs();
+  }
+
+  // Moving a slider turns the shown values (a preset's, perhaps) into custom ones.
+  function setPause(key, value, save) {
+    setPauses({ ...(PAUSE_PRESETS[pausePrefs.preset] ? pauses : {}), preset: 'custom', [key]: value }, save);
+  }
+
+  const seconds = (value) => `${value.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sn`;
 
   function setDevice(value) {
     app.ttsPrefs.device = value;
@@ -185,6 +204,31 @@
       {/each}
     </div>
   </div>
+  <div class="fr">
+    <div class="l">Duraklamalar<small>Cümle ve paragraf sonlarında bırakılan sessizlik. Okurken değiştirilebilir; hazırlanan sesleri etkilemez.</small></div>
+    <div class="seg">
+      {#each Object.entries(PAUSE_PRESETS) as [value, preset]}
+        <button class:on={pausePrefs.preset === value} onclick={() => setPauses({ preset: value })}>{preset.label}</button>
+      {/each}
+      <button class:on={!PAUSE_PRESETS[pausePrefs.preset]} onclick={() => setPauses({ preset: 'custom' })}>Özel</button>
+    </div>
+    <button class="btn sm" aria-expanded={pauseDetails} onclick={() => (pauseDetails = !pauseDetails)}>{pauseDetails ? 'Gizle' : 'Ayrıntılar'}</button>
+  </div>
+  {#if pauseDetails}
+    {#each PAUSE_KEYS as [key, label]}
+      <div class="fr sub">
+        <div class="l">{label}</div>
+        <input class="range" type="range" min="0" max="2" step="0.05" value={pauses[key]} aria-label={label}
+          oninput={(e) => setPause(key, Number(e.currentTarget.value), false)}
+          onchange={(e) => setPause(key, Number(e.currentTarget.value), true)} />
+        <span class="dim-text num">{seconds(pauses[key])}</span>
+      </div>
+    {/each}
+    <div class="fr sub">
+      <div class="l">Hızla birlikte kısalt<small>Hızlı okurken duraklamalar da aynı oranda kısalır.</small></div>
+      <Toggle bind:checked={() => pauses.scale, (scale) => setPauses({ scale })} />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -207,5 +251,7 @@
   .warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
   .seg { display: flex; background: var(--surface); border-radius: 999px; padding: 3px; }
   .seg button { display: inline-flex; gap: 6px; align-items: center; padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--secondary); }
+  .range { width: 220px; accent-color: var(--accent); }
+  .num { width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
   .seg button.on { background: var(--surface-active); color: var(--text); }
 </style>

@@ -1,6 +1,7 @@
 // Read-aloud player: asks the back end (EMA Lightning) for one sentence at a time, plays it with
 // the Web Audio API and prefetches the next sentences so speech flows without gaps.
 import { call } from './api.js';
+import { PAUSE_DEFAULTS, pauseAfter } from './pauses.js';
 
 const PREFETCH = 2;
 
@@ -14,6 +15,8 @@ export const player = $state({
 });
 
 let sentences = [];
+let breaks = new Set();   // indices of sentences that end a paragraph
+let pauses = { ...PAUSE_DEFAULTS };
 let scope = { book: null, language: 'tr' };   // where rendered sentences are cached
 let context = null;
 let source = null;
@@ -27,9 +30,25 @@ export function setHooks(next) {
 
 export function setSentences(list, where = {}) {
   sentences = list;
+  breaks = where.breaks ?? new Set();
   scope = { book: where.book ?? null, language: where.language || 'tr' };
   player.total = list.length;
   cache.clear();
+}
+
+// Silence after each sentence; read when a sentence starts, so changes apply from the next one.
+export function setPauses(next) {
+  pauses = next;
+}
+
+// The sentence followed by its pause: the next one starts when this buffer ends, so pausing and
+// resuming inside the silence works like anywhere else.
+function withPause(buffer, index) {
+  const extra = Math.round(pauseAfter(sentences[index], breaks.has(index), pauses, player.speed) * buffer.sampleRate);
+  if (extra <= 0) return buffer;
+  const padded = context.createBuffer(buffer.numberOfChannels, buffer.length + extra, buffer.sampleRate);
+  for (let channel = 0; channel < buffer.numberOfChannels; channel++) padded.copyToChannel(buffer.getChannelData(channel), channel);
+  return padded;
 }
 
 function base64Buffer(text) {
@@ -89,7 +108,7 @@ async function playIndex(index) {
   for (let i = index + 1; i <= Math.min(sentences.length - 1, index + PREFETCH); i++) fetchSentence(i);
   if (!buffer) { playIndex(index + 1); return; }
   source = context.createBufferSource();
-  source.buffer = buffer;
+  source.buffer = withPause(buffer, index);
   source.connect(context.destination);
   source.onended = () => { if (token === generation && player.playing) playIndex(index + 1); };
   source.start();

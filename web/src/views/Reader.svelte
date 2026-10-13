@@ -5,7 +5,8 @@
   import { call } from '../lib/api.js';
   import { confirm } from '../lib/confirm.svelte.js';
   import { segment } from '../lib/sentences.js';
-  import { player, play, pause, resume, stop, step, setSpeed, setSentences, setHooks } from '../lib/player.svelte.js';
+  import { player, play, pause, resume, stop, step, setSpeed, setSentences, setHooks, setPauses } from '../lib/player.svelte.js';
+  import { resolvePauses, pauseAfter } from '../lib/pauses.js';
 
   let { onclose } = $props();
 
@@ -18,6 +19,7 @@
   let article = $state();
   let saveTimer = null;
   let sentences = $state.raw([]);
+  let breaks = new Set();   // sentences that end a paragraph
   const SPEEDS = [0.8, 1, 1.25, 1.5, 1.75, 2];
 
   const PAPERS = {
@@ -51,13 +53,15 @@
     const target = anchor ? pageWrap.querySelector(`[id="${CSS.escape(anchor)}"]`) : null;
     if (target) target.scrollIntoView({ block: 'start' });
     else pageWrap.scrollTop = offset * Math.max(0, pageWrap.scrollHeight - pageWrap.clientHeight);
-    sentences = segment(article);
-    setSentences(sentences, { book: book.id, language: book.language || 'tr' });
+    ({ sentences, breaks } = segment(article));
+    setSentences(sentences, { book: book.id, language: book.language || 'tr', breaks });
     refreshCached();
     savePosition(true);
   }
 
   // ---- read aloud
+
+  $effect(() => setPauses(resolvePauses(app.ttsPrefs.pauses)));
   function highlight(index) {
     for (const el of article?.querySelectorAll('.s.now') ?? []) el.classList.remove('now');
     const spans = article?.querySelectorAll(`.s[data-i="${index}"]`) ?? [];
@@ -164,7 +168,7 @@
         if (!result || result.error) continue;
         const holder = document.createElement('div');
         holder.innerHTML = result.html;
-        list.push(...segment(holder));
+        list.push(...segment(holder).sentences);
       }
     }
     if (!list.length) { toast('Hazırlanacak metin yok.'); return; }
@@ -181,7 +185,10 @@
     if (app.ttsExport) return;
     if (!sentences.length) { toast('Bu bölümde kaydedilecek metin yok.'); return; }
     if (!(await ensureEngine())) return;
-    const result = await act('tts_export', `${book.title} - ${sectionTitle}`, sentences, app.ttsPrefs.speed, book.id, book.language || 'tr');
+    const pauses = resolvePauses(app.ttsPrefs.pauses);
+    const gaps = sentences.map((text, i) => pauseAfter(text, breaks.has(i), pauses, app.ttsPrefs.speed));
+    const result = await act('tts_export', `${book.title} - ${sectionTitle}`, sentences, app.ttsPrefs.speed, book.id,
+      book.language || 'tr', gaps);
     if (result?.started) app.ttsExport = { done: 0, total: sentences.length };
   }
 
